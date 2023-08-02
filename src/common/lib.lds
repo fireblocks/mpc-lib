@@ -1,0 +1,23 @@
+libcosigner.so
+{
+    global:
+        commitments_*;
+        ring_pedersen_*;
+        drng_*;
+        ed25519_algebra_*;
+        ed25519_verify;
+        elliptic_curve256_*;
+        GFp_curve_algebra_*;
+        keccak1600_*;
+        paillier_*;
+        diffie_hellman_log_*;
+        range_proof_*;
+        schnorr_zkp_*;
+        derive_*;
+        _ZN10fireblocks6common8cosigner17*;
+        _ZN10fireblocks6common8cosigner2*;
+        _ZN10fireblocks6common8cosigner32*;
+        _ZN10fireblocks6common8cosigner33*;
+    local:
+        *;
+};
