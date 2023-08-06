@@ -437,9 +437,19 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
         goto cleanup;
     }
 
+    if (!is_coprime_fast(zkpok.D, paillier->n, ctx))
+    {
+        status = ZKP_VERIFICATION_FAILED;
+        goto cleanup;
+    }
     if (!BN_bin2bn(proof->ciphertext, proof->ciphertext_len, tmp1))
     {
         status = ZKP_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+    if (!is_coprime_fast(tmp1, paillier->n, ctx))
+    {
+        status = ZKP_VERIFICATION_FAILED;
         goto cleanup;
     }
 
@@ -575,9 +585,19 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_batch_verify(const ring_p
             goto cleanup;
         }
 
+        if (!is_coprime_fast(zkpok.D, paillier->n, ctx))
+        {
+            status = ZKP_VERIFICATION_FAILED;
+            goto cleanup;
+        }
         if (!BN_bin2bn(proofs[i].ciphertext, proofs[i].ciphertext_len, tmp1))
         {
             status = ZKP_OUT_OF_MEMORY;
+            goto cleanup;
+        }
+        if (!is_coprime_fast(tmp1, paillier->n, ctx))
+        {
+            status = ZKP_VERIFICATION_FAILED;
             goto cleanup;
         }
 
@@ -974,6 +994,11 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
         goto cleanup;
     }
 
+    if (!is_coprime_fast(zkpok.base.D, paillier->n, ctx))
+    {
+        status = ZKP_VERIFICATION_FAILED;
+        goto cleanup;
+    }
     if (!BN_set_bit(tmp1, (sizeof(elliptic_curve256_scalar_t) + ZKPOK_EPSILON_SIZE) * 8))
         goto cleanup;
     if (BN_ucmp(zkpok.base.z1, tmp1) > 0) // range check
@@ -985,6 +1010,11 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
     if (!BN_bin2bn(proof->ciphertext, proof->ciphertext_len, tmp1))
     {
         status = ZKP_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+    if (!is_coprime_fast(tmp1, paillier->n, ctx))
+    {
+        status = ZKP_VERIFICATION_FAILED;
         goto cleanup;
     }
 

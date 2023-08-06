@@ -953,6 +953,11 @@ long paillier_verify_paillier_blum_zkp(const paillier_public_key_t *pub, const u
     if (!y || !tmp)
         goto cleanup;
 
+    if (!is_coprime_fast(proof.w, pub->n, ctx))
+    {
+        ret = PAILLIER_ERROR_INVALID_PROOF;
+        goto cleanup;
+    }
     for (uint32_t i = 0; i < PAILLIER_BLUM_STATISTICAL_SECURITY; ++i)
     {
         do
@@ -960,6 +965,11 @@ long paillier_verify_paillier_blum_zkp(const paillier_public_key_t *pub, const u
             deterministic_rand(seed, n_len, y, &seed);
         } while (BN_cmp(y, pub->n) >= 0);
         
+        if (!is_coprime_fast(y, pub->n, ctx))
+        {
+            ret = PAILLIER_ERROR_INVALID_PROOF;
+            goto cleanup;
+        }
         if (!BN_mod_exp(tmp, proof.z[i], pub->n, pub->n, ctx))
             goto cleanup;
         if (BN_cmp(tmp, y) != 0)

@@ -654,6 +654,8 @@ long paillier_encrypt_integer(const paillier_public_key_t *key, uint64_t plainte
 {
     long ret = -1;
     int len;
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (ciphertext_real_len)
         *ciphertext_real_len = (uint32_t)BN_num_bytes(key->n2);
     if (!ciphertext || ciphertext_len < (uint32_t)BN_num_bytes(key->n2))
@@ -707,6 +709,8 @@ long paillier_decrypt(const paillier_private_key_t *key, const uint8_t *cipherte
 {
     long ret = PAILLIER_ERROR_OUT_OF_MEMORY;
     int len;
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!ciphertext || ciphertext_len > (uint32_t)BN_num_bytes(key->pub.n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     if (plaintext_real_len)
@@ -768,6 +772,8 @@ cleanup:
 
 long paillier_decrypt_integer(const paillier_private_key_t *key, const uint8_t *ciphertext, uint32_t ciphertext_len, uint64_t *plaintext)
 {
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (ciphertext_len > (uint32_t)BN_num_bytes(key->pub.n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     if (!plaintext)
@@ -833,6 +839,8 @@ long paillier_add(const paillier_public_key_t *key, const uint8_t *a_ciphertext,
     long ret = -1;
     int len = 0;
 
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2) ||
         !b_ciphertext || b_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
@@ -897,6 +905,8 @@ long paillier_add_integer(const paillier_public_key_t *key, const uint8_t *a_cip
     long ret = -1;
     int len = 0;
 
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     if (result_real_len)
@@ -964,6 +974,8 @@ long paillier_sub(const paillier_public_key_t *key, const uint8_t *a_ciphertext,
     long ret = -1;
     int len = 0;
 
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2) ||
         !b_ciphertext || b_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
@@ -1031,6 +1043,8 @@ long paillier_sub_integer(const paillier_public_key_t *key, const uint8_t *a_cip
     long ret = -1;
     int len = 0;
 
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     if (result_real_len)
@@ -1101,6 +1115,8 @@ long paillier_mul(const paillier_public_key_t *key, const uint8_t *a_ciphertext,
     long ret = -1;
     int len = 0;
 
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     if (!b_plaintext || b_plaintext_len > (uint32_t)BN_num_bytes(key->n))
@@ -1166,6 +1182,8 @@ long paillier_mul_integer(const paillier_public_key_t *key, const uint8_t *a_cip
     long ret = -1;
     int len = 0;
 
+    if (!key)
+        return PAILLIER_ERROR_INVALID_KEY;
     if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     if (result_real_len)
