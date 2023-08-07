@@ -34,7 +34,7 @@ make run-tests
 
 ## Usage
 
-A few examples for running a full signing process can be found in the [tests section](https://github.com/fireblocks/fireblocks-mpc/tree/main/test/cosigner)
+A few examples for running a full signing process can be found in the [tests section](https://github.com/fireblocks/mpc-lib/tree/main/test/cosigner)
 
 ## Security
 
