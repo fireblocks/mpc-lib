@@ -22,7 +22,7 @@ namespace mta
 
 class cmp_key_persistency;
 class platform_service;
-class cmp_key_metadata;
+struct cmp_key_metadata;
 struct auxiliary_keys;
 
 struct cmp_mta_message
