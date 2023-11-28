@@ -437,7 +437,7 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
         goto cleanup;
     }
 
-    if (!is_coprime_fast(zkpok.D, paillier->n, ctx))
+    if (is_coprime_fast(zkpok.D, paillier->n, ctx) != 1)
     {
         status = ZKP_VERIFICATION_FAILED;
         goto cleanup;
@@ -447,7 +447,7 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
         status = ZKP_OUT_OF_MEMORY;
         goto cleanup;
     }
-    if (!is_coprime_fast(tmp1, paillier->n, ctx))
+    if (is_coprime_fast(tmp1, paillier->n, ctx) != 1)
     {
         status = ZKP_VERIFICATION_FAILED;
         goto cleanup;
@@ -585,7 +585,7 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_batch_verify(const ring_p
             goto cleanup;
         }
 
-        if (!is_coprime_fast(zkpok.D, paillier->n, ctx))
+        if (is_coprime_fast(zkpok.D, paillier->n, ctx) != 1)
         {
             status = ZKP_VERIFICATION_FAILED;
             goto cleanup;
@@ -595,7 +595,7 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_batch_verify(const ring_p
             status = ZKP_OUT_OF_MEMORY;
             goto cleanup;
         }
-        if (!is_coprime_fast(tmp1, paillier->n, ctx))
+        if (is_coprime_fast(tmp1, paillier->n, ctx) != 1)
         {
             status = ZKP_VERIFICATION_FAILED;
             goto cleanup;
@@ -994,7 +994,7 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
         goto cleanup;
     }
 
-    if (!is_coprime_fast(zkpok.base.D, paillier->n, ctx))
+    if (is_coprime_fast(zkpok.base.D, paillier->n, ctx) != 1)
     {
         status = ZKP_VERIFICATION_FAILED;
         goto cleanup;
@@ -1012,7 +1012,7 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
         status = ZKP_OUT_OF_MEMORY;
         goto cleanup;
     }
-    if (!is_coprime_fast(tmp1, paillier->n, ctx))
+    if (is_coprime_fast(tmp1, paillier->n, ctx) != 1)
     {
         status = ZKP_VERIFICATION_FAILED;
         goto cleanup;

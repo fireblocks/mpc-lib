@@ -607,7 +607,7 @@ zero_knowledge_proof_status ring_pedersen_parameters_zkp_verify(const ring_peder
     if (BN_is_prime_ex(pub->n, 256, ctx, NULL))
         goto cleanup;
 
-    if (!is_coprime_fast(pub->n, pub->t, ctx))
+    if (is_coprime_fast(pub->n, pub->t, ctx) != 1)
         goto cleanup;
 
     ring_pedersen_init_mont(pub, ctx);

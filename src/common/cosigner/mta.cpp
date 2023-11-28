@@ -817,22 +817,22 @@ void response_verifier::process_paillier(const BIGNUM* e, const BIGNUM* request,
     BIGNUM* B = BN_CTX_get(_ctx.get());
     BIGNUM* gamma = BN_CTX_get(_ctx.get());
     
-    if (!is_coprime_fast(response, _my_paillier->pub.n, _ctx.get()))
+    if (is_coprime_fast(response, _my_paillier->pub.n, _ctx.get()) != 1)
     {
         LOG_ERROR("response is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
-    if (!is_coprime_fast(proof.A, _my_paillier->pub.n, _ctx.get()))
+    if (is_coprime_fast(proof.A, _my_paillier->pub.n, _ctx.get()) != 1)
     {
         LOG_ERROR("proof A is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
-    if (!is_coprime_fast(commitment, _other_paillier->n, _ctx.get()))
+    if (is_coprime_fast(commitment, _other_paillier->n, _ctx.get()) != 1)
     {
         LOG_ERROR("commitment is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
-    if (!is_coprime_fast(proof.By, _other_paillier->n, _ctx.get()))
+    if (is_coprime_fast(proof.By, _other_paillier->n, _ctx.get()) != 1)
     {
         LOG_ERROR("proof By is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
