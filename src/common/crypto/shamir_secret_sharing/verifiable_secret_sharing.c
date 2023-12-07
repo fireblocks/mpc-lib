@@ -340,7 +340,7 @@ verifiable_secret_sharing_status verifiable_secret_sharing_get_share(const verif
         return VERIFIABLE_SECRET_SHARING_INVALID_PARAMETER;
     if (index >= shares->num_shares)
         return VERIFIABLE_SECRET_SHARING_INVALID_INDEX;
-    if (!shares->shares[index])
+    if (!shares->shares)
         return VERIFIABLE_SECRET_SHARING_UNKNOWN_ERROR;
     share->id = shares->ids[index];
     memcpy(share->data, shares->shares[index], sizeof(shamir_secret_sharing_scalar_t));
