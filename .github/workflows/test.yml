@@ -16,7 +16,10 @@ jobs:
           sudo apt-get update && sudo apt install -y build-essential uuid-dev libssl-dev libsecp256k1-dev
       - name: Build
         run: |
-          make
-      - name: Test
+          make -C src
+      - name: Build tests
+        run: |
+          make -C test
+      - name: Run Tests
         run: |
           make run-tests
