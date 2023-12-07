@@ -15,12 +15,12 @@ cosigner:
 	@$(MAKE) -C ../../src/
 
 $(App_Cpp_Objects): %.o: %.cpp
-	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
 	@echo "CXX  <=  $<"
+	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
 
 $(App_Name): $(App_Cpp_Objects) cosigner
-	@$(CXX) $(App_Cpp_Objects) -o $@ $(App_Link_Flags)
 	@echo "LINK =>  $@"
+	@$(CXX) $(App_Cpp_Objects) -o $@ $(App_Link_Flags)
 
 clean:
 	@rm -rf $(App_Name) *.o

@@ -40,16 +40,16 @@ Lib_Name := libcosigner.so
 all: $(Lib_Name)
 
 $(C_Objects): %.o: %.c
-	@$(CC) $(C_Flags) -c $< -o $@
 	@echo "CC  <=  $<"
+	@$(CC) $(C_Flags) -c $< -o $@
 
 $(Cpp_Objects): %.o: %.cpp
-	@$(CXX) $(Cpp_Flags) -c $< -o $@
 	@echo "CXX  <=  $<"
+	@$(CXX) $(Cpp_Flags) -c $< -o $@
 
 $(Lib_Name): $(Cpp_Objects) $(C_Objects) lib.lds
-	@$(CXX) $(Cpp_Objects) $(C_Objects) -o $@ $(Link_Flags)
 	@echo "LINK =>  $@"
+	@$(CXX) $(Cpp_Objects) $(C_Objects) -o $@ $(Link_Flags)
 
 clean:
 	@rm -fR $(Lib_Name) $(Cpp_Objects) $(C_Objects)
