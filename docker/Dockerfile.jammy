@@ -21,4 +21,5 @@ RUN wget -O openssl-1.1.1t.tar.gz https://www.openssl.org/source/openssl-1.1.1t.
     && find /usr/local/share -type f -delete
 
 ENV LD_LIBRARY_PATH=/usr/local/lib/:$LD_LIBRARY_PATH
+COPY . /usr/src/mpc-lib/
 WORKDIR /usr/src/mpc-lib

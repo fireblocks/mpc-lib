@@ -11,4 +11,5 @@ RUN apt-get update && apt install -y \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/archives/*
 
+COPY . /usr/src/mpc-lib/
 WORKDIR /usr/src/mpc-lib

@@ -33,10 +33,6 @@ docker build -f ${Dockerfile} . -t $IMAGE_NAME
 
 docker run \
     --rm \
-    --network=host \
-    -it \
-    -v "$PWD:/usr/src/mpc-lib" \
-    --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
-    ${IMAGE_NAME} bash -c "make && make run-tests"
+    ${IMAGE_NAME} bash -c "make -j && make run-tests"
 
 echo "Done"
