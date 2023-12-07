@@ -1421,6 +1421,7 @@ namespace Catch {
 #include <iosfwd>
 #include <cstddef>
 #include <ostream>
+#include <mutex>
 
 namespace Catch {
 
@@ -5876,6 +5877,7 @@ namespace Catch {
         void testCaseStarting( TestCaseInfo const& ) override {}
 
         void sectionStarting( SectionInfo const& sectionInfo ) override {
+            std::lock_guard<std::mutex> lg(lock);
             SectionStats incompleteStats( sectionInfo, Counts(), 0, false );
             std::shared_ptr<SectionNode> node;
             if( m_sectionStack.empty() ) {
@@ -5903,6 +5905,7 @@ namespace Catch {
         void assertionStarting(AssertionInfo const&) override {}
 
         bool assertionEnded(AssertionStats const& assertionStats) override {
+            std::lock_guard<std::mutex> lg(lock);
             assert(!m_sectionStack.empty());
             // AssertionResult holds a pointer to a temporary DecomposedExpression,
             // which getExpandedExpression() calls to build the expression string.
@@ -5915,12 +5918,14 @@ namespace Catch {
             return true;
         }
         void sectionEnded(SectionStats const& sectionStats) override {
+            std::lock_guard<std::mutex> lg(lock);
             assert(!m_sectionStack.empty());
             SectionNode& node = *m_sectionStack.back();
             node.stats = sectionStats;
             m_sectionStack.pop_back();
         }
         void testCaseEnded(TestCaseStats const& testCaseStats) override {
+            std::lock_guard<std::mutex> lg(lock);
             auto node = std::make_shared<TestCaseNode>(testCaseStats);
             assert(m_sectionStack.size() == 0);
             node->children.push_back(m_rootSection);
@@ -5946,6 +5951,7 @@ namespace Catch {
 
         void skipTest(TestCaseInfo const&) override {}
 
+        std::mutex lock;
         IConfigPtr m_config;
         std::ostream& stream;
         std::vector<AssertionStats> m_assertions;
@@ -17963,4 +17969,3 @@ using Catch::Detail::Approx;
 // end catch_reenable_warnings.h
 // end catch.hpp
 #endif // TWOBLUECUBES_SINGLE_INCLUDE_CATCH_HPP_INCLUDED
-
