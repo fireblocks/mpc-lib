@@ -1,0 +1,25 @@
+
+FROM ubuntu:jammy
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt install -y \
+    build-essential \
+    uuid-dev \
+    libsecp256k1-dev \
+    wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/archives/*
+
+WORKDIR /usr/src/
+
+RUN wget -O openssl-1.1.1t.tar.gz https://www.openssl.org/source/openssl-1.1.1t.tar.gz \
+    && tar zxf openssl-1.1.1t.tar.gz \
+    && cd openssl-1.1.1t \
+    && ./config && make && make install_sw \
+    && cd ../ && rm -rf openssl-1.1.1t\
+    && find /usr/local/share -type f -delete
+
+ENV LD_LIBRARY_PATH=/usr/local/lib/:$LD_LIBRARY_PATH
+COPY . /usr/src/mpc-lib/
+WORKDIR /usr/src/mpc-lib

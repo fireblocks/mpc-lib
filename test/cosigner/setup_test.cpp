@@ -163,6 +163,7 @@ void create_secret(players_setup_info& players, cosigner_sign_algorithm type, co
 {
     std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> algebra(create_algebra(type), elliptic_curve256_algebra_ctx_free);
     const size_t PUBKEY_SIZE = algebra->point_size(algebra.get());
+    memset(pubkey, 0, sizeof(elliptic_curve256_point_t));
 
     std::cout << "keyid = " << keyid << std::endl;
     std::vector<uint64_t> players_ids;
