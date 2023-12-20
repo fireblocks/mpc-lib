@@ -51,10 +51,10 @@ static inline void bswap_256(const ed25519_scalar_t in, ed25519_scalar_t out)
 {
     uint64_t *inptr = (uint64_t*)in;
     uint64_t *outptr = (uint64_t*)out;
-    outptr[0] = __bswap_64(inptr[3]);
-    outptr[1] = __bswap_64(inptr[2]);
-    outptr[2] = __bswap_64(inptr[1]);
-    outptr[3] = __bswap_64(inptr[0]);
+    outptr[0] = bswap_64(inptr[3]);
+    outptr[1] = bswap_64(inptr[2]);
+    outptr[2] = bswap_64(inptr[1]);
+    outptr[3] = bswap_64(inptr[0]);
 }
 
 static inline int ed25519_to_scalar(const ed25519_scalar_t in, ed25519_scalar_t out)
@@ -852,8 +852,8 @@ static uint8_t in_field(const elliptic_curve256_scalar_t val)
     const uint32_t *ptr2 = (const uint32_t*)ED25519_FIELD;
     for (size_t i = sizeof(elliptic_curve256_scalar_t) / sizeof(uint32_t); i > 0; i --)
     {
-        uint64_t v1 = __bswap_32(ptr1[i - 1]);
-        uint64_t v2 = __bswap_32(ptr2[i - 1]);
+        uint64_t v1 = bswap_32(ptr1[i - 1]);
+        uint64_t v2 = bswap_32(ptr2[i - 1]);
         cc = ((v1 - v2 - cc) >> 32) & 1;
     }
     return cc;
