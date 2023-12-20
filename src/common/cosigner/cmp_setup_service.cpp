@@ -2,7 +2,7 @@
 #include "cosigner/cosigner_exception.h"
 #include "utils.h"
 #include "crypto/zero_knowledge_proof/schnorr.h"
-#include "logging/logging_t.h"
+#include "logging/logging.h"
 
 #include <openssl/sha.h>
 

@@ -14,6 +14,7 @@ libcosigner.so
         range_proof_*;
         schnorr_zkp_*;
         derive_*;
+        cosigner_log_*;
         _ZN10fireblocks6common8cosigner17*;
         _ZN10fireblocks6common8cosigner2*;
         _ZN10fireblocks6common8cosigner32*;

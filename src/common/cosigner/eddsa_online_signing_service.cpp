@@ -4,7 +4,7 @@
 #include "cosigner/mpc_globals.h"
 #include "cosigner/platform_service.h"
 #include "utils.h"
-#include "logging/logging_t.h"
+#include "logging/logging.h"
 
 extern "C" int gettimeofday(struct timeval *tv, struct timezone *tz);
 

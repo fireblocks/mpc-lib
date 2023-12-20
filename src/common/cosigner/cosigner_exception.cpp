@@ -1,6 +1,6 @@
 #include "cosigner/cosigner_exception.h"
 #include "crypto/paillier/paillier.h"
-#include "logging/logging_t.h"
+#include "logging/logging.h"
 
 namespace fireblocks
 {
