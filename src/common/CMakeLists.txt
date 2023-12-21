@@ -24,6 +24,7 @@ set(COSIGNER_FILES
     cosigner/eddsa_online_signing_service.cpp
     cosigner/mta.cpp
     cosigner/utils.cpp
+    logging/logging_t.c
 )
 
 add_library(cosigner SHARED ${COSIGNER_FILES})
