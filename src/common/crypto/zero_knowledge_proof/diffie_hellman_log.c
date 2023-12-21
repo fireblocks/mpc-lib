@@ -13,8 +13,8 @@ static inline int cmp_uint256(const uint8_t *a, const uint8_t *b)
 
     for (size_t i = 0; i < sizeof(elliptic_curve256_scalar_t) / sizeof(uint64_t); i++)
     {
-        uint64_t n1 = __bswap_64(*aptr); // elliptic_curve256_scalar_t is represented as big endian number
-        uint64_t n2 = __bswap_64(*bptr);
+        uint64_t n1 = bswap_64(*aptr); // elliptic_curve256_scalar_t is represented as big endian number
+        uint64_t n2 = bswap_64(*bptr);
         if (n1 > n2)
             return 1;
         else if (n1 < n2)

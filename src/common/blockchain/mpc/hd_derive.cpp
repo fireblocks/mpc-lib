@@ -51,7 +51,7 @@ static hd_derive_status BIP32Hash(hmac_sha_result output, const HDChaincode chai
     if (1 != HMAC_Update(ctx, num, 4)) {
         goto end_bip32_hash;
     }
-    
+
     if (1 != HMAC_Final(ctx, output, &output_len)) {
         goto end_bip32_hash;
     }
@@ -142,7 +142,7 @@ hd_derive_status derive_private_key_generic(const elliptic_curve256_algebra_ctx_
 hd_derive_status derive_private_and_public_keys(const elliptic_curve256_algebra_ctx_t *ctx, PrivKey derived_privkey, PubKey derived_pubkey, const PubKey pubkey, const PrivKey privkey, const HDChaincode chaincode, 
     const uint32_t* path, const uint32_t path_len) {
     PubKey temp_pubkey;
-    
+
     if (!path || !path_len)
     {
         memcpy(derived_privkey, privkey, PRIVATE_KEY_SIZE);
@@ -170,18 +170,11 @@ hd_derive_status derive_private_and_public_keys(const elliptic_curve256_algebra_
     return HD_DERIVE_SUCCESS;
 }
 
-hd_derive_status build_bip44_path(uint32_t** path, uint32_t* path_len, uint32_t asset_num, uint32_t account, uint32_t change, uint32_t addr_index) {
-    *path_len = 5;
-    *path = (uint32_t*)malloc(BIP44_PATH_LENGTH * sizeof(uint32_t));
-    if (NULL == *path){
-        return HD_DERIVE_ERROR_OUT_OF_MEMORY;
-    }
-
-    (*path)[0] = BIP44; //purpose
-    (*path)[1] = asset_num;
-    (*path)[2] = account;
-    (*path)[3] = change;
-    (*path)[4] = addr_index;
-
+hd_derive_status build_bip44_path(Bip44Path path, uint32_t asset_num, uint32_t account, uint32_t change, uint32_t addr_index) {
+    path[0] = BIP44; //purpose
+    path[1] = asset_num;
+    path[2] = account;
+    path[3] = change;
+    path[4] = addr_index;
     return HD_DERIVE_SUCCESS;
 }
