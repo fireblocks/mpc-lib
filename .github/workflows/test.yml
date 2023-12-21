@@ -23,3 +23,24 @@ jobs:
       - name: Run Tests
         run: |
           make run-tests
+
+  cmake-test:
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt install -y build-essential cmake pkg-config uuid-dev libssl-dev
+      - name: Configure
+        run: |
+          mkdir build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: |
+          cmake --build build -j $(nproc)
+      - name: Run Tests
+        run: |
+          cd build && ctest --output-on-failure
