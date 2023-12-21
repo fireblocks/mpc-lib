@@ -3,7 +3,7 @@
 #include "cosigner/cosigner_exception.h"
 #include "cosigner/platform_service.h"
 #include "cosigner/mpc_globals.h"
-#include "logging/logging.h"
+#include "logging/logging_t.h"
 #include "utils.h"
 
 #include <openssl/sha.h>

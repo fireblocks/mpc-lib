@@ -6,7 +6,7 @@
 #include "../crypto/paillier/paillier_internal.h"
 
 #ifndef TEST_ONLY
-#include "logging/logging.h"
+#include "logging/logging_t.h"
 #else
 #define LOG_ERROR(message, ...) printf((message), ##__VA_ARGS__);putchar('\n')
 #endif

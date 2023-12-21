@@ -6,7 +6,7 @@
 #include "crypto/GFp_curve_algebra/GFp_curve_algebra.h"
 #include "crypto/zero_knowledge_proof/range_proofs.h"
 #include "utils.h"
-#include "logging/logging.h"
+#include "logging/logging_t.h"
 
 namespace fireblocks
 {

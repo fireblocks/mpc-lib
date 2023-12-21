@@ -6,7 +6,7 @@
 #include "cosigner/platform_service.h"
 #include "cosigner/prf.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
-#include "logging/logging.h"
+#include "logging/logging_t.h"
 
 namespace fireblocks
 {

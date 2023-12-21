@@ -2,7 +2,7 @@
 #include "cosigner/cmp_key_persistency.h"
 #include "cosigner/cosigner_exception.h"
 #include "cosigner/platform_service.h"
-#include "logging/logging.h"
+#include "logging/logging_t.h"
 
 namespace fireblocks
 {

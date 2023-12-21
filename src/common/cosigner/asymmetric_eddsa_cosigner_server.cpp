@@ -4,7 +4,7 @@
 #include "cosigner/platform_service.h"
 #include "cosigner/mpc_globals.h"
 #include "utils.h"
-#include "logging/logging.h"
+#include "logging/logging_t.h"
 
 #include <openssl/sha.h>
 
