@@ -1019,8 +1019,8 @@ static uint8_t in_field(const elliptic_curve256_scalar_t val, const uint8_t *fie
     const uint32_t *ptr2 = (const uint32_t*)field;
     for (size_t i = sizeof(elliptic_curve256_scalar_t) / sizeof(uint32_t); i > 0; i --)
     {
-        uint64_t v1 = __bswap_32(ptr1[i - 1]);
-        uint64_t v2 = __bswap_32(ptr2[i - 1]);
+        uint64_t v1 = bswap_32(ptr1[i - 1]);
+        uint64_t v2 = bswap_32(ptr2[i - 1]);
         cc = ((v1 - v2 - cc) >> 32) & 1;
     }
     return cc;
