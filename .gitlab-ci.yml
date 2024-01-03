@@ -1,0 +1,39 @@
+default:
+  image: docker.io/ubuntu:20.04
+  tags:
+    - dev-common-runner
+  before_script:
+    - apt update
+    - DEBIAN_FRONTEND=noninteractive apt install -y build-essential cmake pkg-config uuid-dev libssl-dev libsecp256k1-dev
+
+build-make:
+  stage: build
+  script:
+    - make -C src
+  artifacts:
+    paths:
+      - src/common/libcosigner.so
+
+tests-make:
+  stage: test
+  needs:
+    - build-make
+  script:
+    - make -C test -j $(nproc)
+    - make run-tests
+
+build-cmake:
+  stage: build
+  script:
+    - mkdir build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+    - cmake --build build -j $(nproc)
+  artifacts:
+    paths:
+      - build/
+
+tests-cmake:
+  stage: test
+  needs:
+    - build-cmake
+  script:
+    - cd build && ctest --output-on-failure
