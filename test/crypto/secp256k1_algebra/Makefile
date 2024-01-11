@@ -6,7 +6,11 @@ App_Link_Flags := -lcrypto
 
 all: $(App_Name)
 
-main.o: main.cpp
+tests.o: tests.cpp
+	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
+	@echo "CXX  <=  $<"
+
+../../tests_main.o: ../../tests_main.cpp
 	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
 	@echo "CXX  <=  $<"
 
@@ -14,7 +18,7 @@ GFp_curve_algebra.o: ../../../src/common/crypto/GFp_curve_algebra/GFp_curve_alge
 	@$(CC) $(App_C_Flags) -c $< -o $@
 	@echo "CC   <=  $<"
 
-$(App_Name): main.o GFp_curve_algebra.o
+$(App_Name): tests.o ../../tests_main.o GFp_curve_algebra.o
 	@$(CXX) $^ -o $@ $(App_Link_Flags)
 	@echo "LINK =>  $@"
 

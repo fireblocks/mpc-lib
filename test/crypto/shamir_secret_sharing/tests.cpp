@@ -4,7 +4,8 @@
 
 #include <memory>
 
-#define CATCH_CONFIG_MAIN  
+#include <string.h>
+
 #include <tests/catch.hpp>
 
 std::unique_ptr<elliptic_curve256_algebra_ctx_t, void (*)(elliptic_curve256_algebra_ctx_t*)> secp256k1(elliptic_curve256_new_secp256k1_algebra(), elliptic_curve256_algebra_ctx_free);

@@ -6,7 +6,11 @@ App_Link_Flags := -lcrypto
 
 all: $(App_Name)
 
-main.o: main.cpp
+tests.o: tests.cpp
+	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
+	@echo "CXX  <=  $<"
+
+../../tests_main.o: ../../tests_main.cpp
 	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
 	@echo "CXX  <=  $<"
 
@@ -18,7 +22,7 @@ paillier_zkp.o: ../../../src/common/crypto/paillier/paillier_zkp.c
 	@$(CC) $(App_C_Flags) -c $< -o $@
 	@echo "CC   <=  $<"
 
-$(App_Name): main.o paillier.o paillier_zkp.o
+$(App_Name): tests.o ../../tests_main.o paillier.o paillier_zkp.o
 	@$(CXX) $^ -o $@ $(App_Link_Flags)
 	@echo "LINK =>  $@"
 

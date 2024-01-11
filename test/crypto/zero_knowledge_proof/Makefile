@@ -6,7 +6,11 @@ App_Link_Flags := -Wl,-Bstatic -lcrypto -Wl,-Bdynamic -ldl -pthread
 
 all: $(App_Name)
 
-main.o: main.cpp
+tests.o: tests.cpp
+	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
+	@echo "CXX  <=  $<"
+
+../../tests_main.o: ../../tests_main.cpp
 	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
 	@echo "CXX  <=  $<"
 
@@ -47,7 +51,7 @@ diffie_hellman_log.o: ../../../src/common/crypto/zero_knowledge_proof/diffie_hel
 	@echo "CC   <=  $<"
 
 
-$(App_Name): main.o GFp_curve_algebra.o ed25519_algebra.o schnorr.o ring_pedersen.o drng.o range_proofs.o paillier.o diffie_hellman_log.o keccak1600.o
+$(App_Name): tests.o ../../tests_main.o GFp_curve_algebra.o ed25519_algebra.o schnorr.o ring_pedersen.o drng.o range_proofs.o paillier.o diffie_hellman_log.o keccak1600.o
 	@$(CXX) $^ -o $@ $(App_Link_Flags)
 	@echo "LINK =>  $@"
 

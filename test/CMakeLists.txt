@@ -1,3 +1,6 @@
+add_library(tests_main OBJECT tests_main.cpp)
+target_link_libraries(tests_main PRIVATE cosigner)
+
 add_subdirectory(cosigner)
 add_subdirectory(crypto/drng)
 add_subdirectory(crypto/ed25519_algebra)

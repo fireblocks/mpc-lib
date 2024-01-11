@@ -4,7 +4,7 @@ App_C_Flags := -g -I../../include -DTEST_ONLY
 App_Cpp_Flags := $(App_C_Flags) -std=c++17
 App_Link_Flags := -L../../src/common -lcosigner -Wl,-Bstatic -lcrypto -Wl,-Bdynamic -luuid -lsecp256k1 -pthread -ldl
 
-App_Cpp_Files := $(wildcard ./*.cpp)
+App_Cpp_Files := $(wildcard ./*.cpp) ../tests_main.cpp
 App_Cpp_Objects := $(App_Cpp_Files:.cpp=.o)
 
 OLD_LD_PATH := $(LD_LIBRARY_PATH)

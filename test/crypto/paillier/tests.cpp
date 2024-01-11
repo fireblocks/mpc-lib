@@ -2,9 +2,9 @@
 #include <openssl/bn.h>
 #include <openssl/bio.h>
 
-#define CATCH_CONFIG_MAIN  
-#include <tests/catch.hpp>
+#include <string.h>
 
+#include <tests/catch.hpp>
 
 TEST_CASE( "gen_key", "paillier") {
     SECTION("gen_key") {
