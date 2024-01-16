@@ -3,6 +3,7 @@
 #include <uuid/uuid.h>
 #include <string>
 #include <memory>
+#include <optional>
 
 #include "cosigner/cmp_setup_service.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
@@ -19,7 +20,7 @@ private:
     void load_key_metadata(const std::string& key_id, fireblocks::common::cosigner::cmp_key_metadata& metadata, bool full_load) const override;
     void load_auxiliary_keys(const std::string& key_id, fireblocks::common::cosigner::auxiliary_keys& aux) const override;
     void store_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, uint64_t ttl = 0) override;
-    void store_key_metadata(const std::string& key_id, const fireblocks::common::cosigner::cmp_key_metadata& metadata) override;
+    void store_key_metadata(const std::string& key_id, const fireblocks::common::cosigner::cmp_key_metadata& metadata, bool allow_override) override;
     void store_auxiliary_keys(const std::string& key_id, const fireblocks::common::cosigner::auxiliary_keys& aux) override;
     void store_keyid_tenant_id(const std::string& key_id, const std::string& tenant_id) override;
     void store_setup_data(const std::string& key_id, const fireblocks::common::cosigner::setup_data& metadata) override;
@@ -32,10 +33,10 @@ private:
     {
         cosigner_sign_algorithm algorithm;
         elliptic_curve256_scalar_t private_key;
-        fireblocks::common::cosigner::cmp_key_metadata metadata;
+        std::optional<fireblocks::common::cosigner::cmp_key_metadata> metadata;
         fireblocks::common::cosigner::auxiliary_keys aux_keys;
     };
-    
+
     std::map<std::string, key_info> _keys;
     std::map<std::string, fireblocks::common::cosigner::setup_data> _setup_data;
     std::map<std::string, std::map<uint64_t, fireblocks::common::cosigner::commitment>> _commitments;

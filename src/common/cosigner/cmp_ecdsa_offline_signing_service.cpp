@@ -64,6 +64,7 @@ void cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing(cons
     _preprocessing_persistency.create_preprocessed_data(key_id, total_count);
 
     preprocessing_metadata processing_metadata = {key_id, metadata.algorithm, players_ids, start_index, count};
+    memset(processing_metadata.ack, 0, sizeof(commitments_sha256_t));
     _preprocessing_persistency.store_preprocessing_metadata(request_id, processing_metadata);
 
     uint64_t my_id = _service.get_id_from_keyid(key_id);
@@ -92,6 +93,13 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::stri
     {
         LOG_ERROR("got %lu mta requests but the request is for %lu players", requests.size(), metadata.players_ids.size());
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    static const commitments_sha256_t ZERO = {0};
+    if (memcmp(metadata.ack, ZERO, sizeof(commitments_sha256_t)) != 0)
+    {
+        LOG_ERROR("Can't change mta message ack");
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
 
     ack_mta_request(metadata.count, requests, metadata.players_ids, metadata.ack);

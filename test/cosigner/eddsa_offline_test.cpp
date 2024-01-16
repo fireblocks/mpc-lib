@@ -237,6 +237,7 @@ static void ecdsa_preprocess(std::map<uint64_t, std::unique_ptr<server_info>>& s
     for (auto i = servers.begin(); i != servers.end(); ++i)
     {
         REQUIRE_NOTHROW(i->second->service.store_presigning_data(keyid, request, start, count, total, players_ids, client.id, R_commitments));
+        REQUIRE_THROWS_AS(i->second->service.store_presigning_data(keyid, request, start, count, total, players_ids, client.id, R_commitments), cosigner_exception);
     }
 }
 
@@ -279,7 +280,11 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
         auto& R_commitment = R_commitments[i->first];
         auto& R = Rs_map[i->first];
         REQUIRE_NOTHROW(i->second->service.eddsa_sign_offline(keyid, txid, data, "", players_str, players_ids, start_index, R_commitment, R));
-        
+
+        std::vector<eddsa_commitment> repeat_commitments;
+        Rs_and_commitments repeat_Rs;
+        REQUIRE_THROWS_AS(i->second->service.eddsa_sign_offline(keyid, txid, data, "", players_str, players_ids, start_index, repeat_commitments, repeat_Rs), cosigner_exception);
+
         if (servers.size() == 1)
         {
             REQUIRE(R_commitment.size() == 0);
@@ -306,6 +311,9 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
             REQUIRE_NOTHROW(i->second->service.decommit_r(txid, R_commitments, R.Rs));
             Rs[i->first] = R.Rs;
             REQUIRE(R.Rs.size() == count);
+
+            std::vector<elliptic_curve_point> repeat_Rs;
+            REQUIRE_THROWS_AS(i->second->service.decommit_r(txid, R_commitments, repeat_Rs), cosigner_exception);
         }
 
         for (auto i = servers.begin(); i != servers.end(); ++i)
@@ -314,10 +322,18 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
             auto& R = server_Rs[i->first];
             REQUIRE_NOTHROW(i->second->service.broadcast_r(txid, Rs, R, send_to_id));
             REQUIRE(send_to_id == CLIENT_ID);
+
+            uint64_t repeat_send_to_id;
+            Rs_and_commitments repeat_R;
+            REQUIRE_THROWS_AS(i->second->service.broadcast_r(txid, Rs, repeat_R, repeat_send_to_id), cosigner_exception);
         }
     }
+
     std::vector<eddsa_signature> partial_sigs;
     REQUIRE_NOTHROW(client.service.eddsa_sign_offline(keyid, txid, data, "", players_str, players_ids, start_index, server_Rs, partial_sigs));
+
+    std::vector<eddsa_signature> repeat_partial_sigs;
+    REQUIRE_THROWS_AS(client.service.eddsa_sign_offline(keyid, txid, data, "", players_str, players_ids, start_index, server_Rs, repeat_partial_sigs), cosigner_exception);
 
     std::set<uint64_t> send_to;
     std::map<uint64_t, std::vector<eddsa_signature>> sigs;
@@ -328,12 +344,16 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
         REQUIRE_NOTHROW(i->second->service.broadcast_si(txid, CLIENT_ID, MPC_PROTOCOL_VERSION, partial_sigs, sig, send_to, final_signature));
         REQUIRE(final_signature == (servers.size() == 1));
 
+        std::vector<eddsa_signature> repeat_sigs;
+        std::set<uint64_t> repeat_send_to;
+        bool repeat_final_signature;
+        REQUIRE_THROWS_AS(i->second->service.broadcast_si(txid, CLIENT_ID, MPC_PROTOCOL_VERSION, partial_sigs, repeat_sigs, repeat_send_to, repeat_final_signature), cosigner_exception);
+
         REQUIRE(send_to.size() == servers.size());
         for (auto j = servers.begin(); j != servers.end(); ++j)
         {
             REQUIRE(send_to.find(j->first) != send_to.end());
         }
-        
     }
 
     std::map<uint64_t, std::vector<eddsa_signature>> final_sigs;
@@ -347,6 +367,9 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
         {
             auto& sig = final_sigs[i->first];
             REQUIRE_NOTHROW(i->second->service.get_eddsa_signature(txid, sigs, sig));
+
+            std::vector<eddsa_signature> repeat_sig;
+            REQUIRE_THROWS_AS(i->second->service.get_eddsa_signature(txid, sigs, repeat_sig), cosigner_exception);
         }
     }
 
@@ -363,7 +386,6 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
             eddsa_signature& sig = j->second[i];
             std::cout << "sig r: " << HexStr(sig.R, &sig.R[sizeof(elliptic_curve256_scalar_t)]) << std::endl;
             std::cout << "sig s: " << HexStr(sig.s, &sig.s[sizeof(elliptic_curve256_scalar_t)]) << std::endl;
-            
 
             uint8_t raw_sig[sizeof(elliptic_curve256_scalar_t) * 2];
             memcpy(raw_sig, sig.R, sizeof(elliptic_curve256_scalar_t));

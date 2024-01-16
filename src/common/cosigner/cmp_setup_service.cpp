@@ -160,11 +160,11 @@ void cmp_setup_service::generate_setup_proofs(const std::string& key_id, const s
     std::map<uint64_t, commitment> commitments;
     _key_persistency.load_setup_commitments(key_id, commitments);
     verify_and_load_setup_decommitments(key_id, commitments, decommitments, metadata.players_info);
-    
+
     auto algebra = get_algebra(metadata.algorithm);
     setup_data temp_data;
     _key_persistency.load_setup_data(key_id, temp_data);
-        
+
     memset(metadata.seed, 0, sizeof(commitments_sha256_t));
     for (auto i = decommitments.begin(); i != decommitments.end(); ++i)
     {
@@ -174,7 +174,7 @@ void cmp_setup_service::generate_setup_proofs(const std::string& key_id, const s
 
     generate_setup_proofs(key_id, algebra, temp_data, metadata.seed, proofs);
     _key_persistency.store_setup_data(key_id, temp_data);
-    _key_persistency.store_key_metadata(key_id, metadata);
+    _key_persistency.store_key_metadata(key_id, metadata, true);
 }
 
 void cmp_setup_service::verify_setup_proofs(const std::string& key_id, const std::map<uint64_t, setup_zk_proofs>& proofs, std::map<uint64_t, byte_vector_t>& paillier_large_factor_proofs)
@@ -201,7 +201,7 @@ void cmp_setup_service::verify_setup_proofs(const std::string& key_id, const std
     }
     else
         memcpy(metadata.public_key, pubkey, sizeof(elliptic_curve256_point_t));
-    _key_persistency.store_key_metadata(key_id, metadata);
+    _key_persistency.store_key_metadata(key_id, metadata, true);
 
     uint64_t my_id = _service.get_id_from_keyid(key_id);
     auto aad = build_aad(key_id, my_id, metadata.seed);
@@ -480,8 +480,8 @@ void cmp_setup_service::generate_setup_commitments(const std::string& key_id, co
         metadata.players_info[*i] = cmp_player_info();
     memset(metadata.seed, 0, sizeof(commitments_sha256_t));
     memcpy(metadata.public_key, *pubkey, sizeof(elliptic_curve256_point_t));
-    
-    _key_persistency.store_key_metadata(key_id, metadata);
+
+    _key_persistency.store_key_metadata(key_id, metadata, false);
     _key_persistency.store_setup_data(key_id, temp_data);
     _key_persistency.store_keyid_tenant_id(key_id, tenant_id);
     _key_persistency.store_auxiliary_keys(key_id, aux);

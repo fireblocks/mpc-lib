@@ -152,6 +152,9 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     {
         auto& request = mta_requests[i->first];
         REQUIRE_NOTHROW(i->second->signing_service.start_signing(keyid, txid, type, data, "", players_str, players_ids, request));
+
+        std::vector<cmp_mta_request> repeat_requests;
+        REQUIRE_THROWS_AS(i->second->signing_service.start_signing(keyid, txid, type, data, "", players_str, players_ids, repeat_requests), cosigner_exception);
     }
 
     std::map<uint64_t, cmp_mta_responses> mta_responses;
@@ -159,6 +162,9 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     {
         auto& response = mta_responses[i->first];
         REQUIRE_NOTHROW(i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, response));
+
+        cmp_mta_responses repeat_response;
+        REQUIRE_THROWS_AS(i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, repeat_response), cosigner_exception);
     }
     mta_requests.clear();
 
@@ -167,6 +173,12 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     {
         auto& delta = deltas[i->first];
         REQUIRE_NOTHROW(i->second->signing_service.mta_verify(txid, mta_responses, delta));
+
+        cmp_mta_responses repeat_response;
+        REQUIRE_THROWS_AS(i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, repeat_response), cosigner_exception);
+
+        std::vector<cmp_mta_deltas> repeat_deltas;
+        REQUIRE_THROWS_AS(i->second->signing_service.mta_verify(txid, mta_responses, repeat_deltas), cosigner_exception);
     }
     mta_responses.clear();
 
@@ -175,6 +187,12 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     {
         auto& si = sis[i->first];
         REQUIRE_NOTHROW(i->second->signing_service.get_si(txid, deltas, si));
+
+        std::vector<cmp_mta_deltas> repeat_deltas;
+        REQUIRE_THROWS_AS(i->second->signing_service.mta_verify(txid, mta_responses, repeat_deltas), cosigner_exception);
+
+        std::vector<elliptic_curve_scalar> repeat_sis;
+        REQUIRE_THROWS_AS(i->second->signing_service.get_si(txid, deltas, repeat_sis), std::out_of_range);
     }
     deltas.clear();
 
@@ -182,6 +200,9 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         REQUIRE_NOTHROW(i->second->signing_service.get_cmp_signature(txid, sis, sigs));
+
+        std::vector<recoverable_signature> repeat_sigs;
+        REQUIRE_THROWS_AS(i->second->signing_service.get_cmp_signature(txid, sis, repeat_sigs), cosigner_exception);
     }
     sis.clear();
 

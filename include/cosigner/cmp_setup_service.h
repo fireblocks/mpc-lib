@@ -63,8 +63,8 @@ public:
         virtual ~setup_key_persistency() {}
 
         virtual void store_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, uint64_t ttl = 0) = 0;
-        
-        virtual void store_key_metadata(const std::string& key_id, const cmp_key_metadata& metadata) = 0;
+
+        virtual void store_key_metadata(const std::string& key_id, const cmp_key_metadata& metadata, bool allow_override) = 0;
         virtual void store_auxiliary_keys(const std::string& key_id, const auxiliary_keys& aux) = 0;
         virtual void store_keyid_tenant_id(const std::string& key_id, const std::string& tenant_id) = 0;
         virtual void store_setup_data(const std::string& key_id, const setup_data& metadata) = 0;
