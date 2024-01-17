@@ -11,7 +11,7 @@ endif()
 
 add_subdirectory(src/common)
 
-if(NOT MPC_LIB_SKIP_TESTS)
+if(${CMAKE_SOURCE_DIR} STREQUAL ${PROJECT_SOURCE_DIR} AND NOT MPC_LIB_SKIP_TESTS)
     enable_testing()
     add_subdirectory(test)
 endif()

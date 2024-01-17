@@ -1,6 +1,7 @@
 #include "crypto/drng/drng.h"
 
-#define CATCH_CONFIG_MAIN  
+#include <string.h>
+
 #include <tests/catch.hpp>
 
 TEST_CASE("schnorr", "verify") {

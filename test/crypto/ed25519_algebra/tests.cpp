@@ -5,8 +5,8 @@
 #include <openssl/bn.h>
 
 #include <byteswap.h>
+#include <string.h>
 
-#define CATCH_CONFIG_MAIN  
 #include <tests/catch.hpp>
 
 TEST_CASE( "verify", "zkp") {

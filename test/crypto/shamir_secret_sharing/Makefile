@@ -6,7 +6,11 @@ App_Link_Flags := -Wl,-Bstatic -lcrypto -Wl,-Bdynamic -pthread -ldl
 
 all: $(App_Name)
 
-main.o: main.cpp
+tests.o: tests.cpp
+	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
+	@echo "CXX  <=  $<"
+
+../../tests_main.o: ../../tests_main.cpp
 	@$(CXX) $(App_Cpp_Flags) -c $< -o $@
 	@echo "CXX  <=  $<"
 
@@ -30,8 +34,7 @@ commitments.o: ../../../src/common/crypto/commitments/commitments.c
 	@$(CC) $(App_C_Flags) -c $< -o $@
 	@echo "CC   <=  $<"
 
-
-$(App_Name): main.o verifiable_secret_sharing.o GFp_curve_algebra.o ed25519_algebra.o commitments.o keccak1600.o
+$(App_Name): tests.o ../../tests_main.o verifiable_secret_sharing.o GFp_curve_algebra.o ed25519_algebra.o commitments.o keccak1600.o
 	@$(CXX) $^ -o $@ $(App_Link_Flags)
 	@echo "LINK =>  $@"
 

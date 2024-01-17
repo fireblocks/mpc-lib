@@ -5,7 +5,10 @@
 #include <openssl/rand.h>
 #include <openssl/bn.h>
 
-#define CATCH_CONFIG_MAIN  
+#include <iostream>
+
+#include <string.h>
+
 #include <tests/catch.hpp>
 
 TEST_CASE("schnorr", "verify") {
