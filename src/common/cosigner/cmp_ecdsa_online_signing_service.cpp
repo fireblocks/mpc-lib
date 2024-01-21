@@ -111,6 +111,7 @@ void cmp_ecdsa_online_signing_service::start_signing(const std::string& key_id, 
     LOG_INFO("Starting signing process keyid = %s, txid = %s", key_id.c_str(), txid.c_str());
     cmp_signing_metadata info = {key_id};
     memcpy(info.chaincode, data.chaincode, sizeof(HDChaincode));
+    memset(info.ack, 0, sizeof(commitments_sha256_t));
     info.signers_ids.insert(players_ids.begin(), players_ids.end());
     info.version = common::cosigner::MPC_PROTOCOL_VERSION;
 
@@ -152,6 +153,13 @@ uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid,
     {
         LOG_ERROR("got %lu mta requests but the request is for %lu players", requests.size(), metadata.signers_ids.size());
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    static const commitments_sha256_t ZERO = {0};
+    if (memcmp(metadata.ack, ZERO, sizeof(commitments_sha256_t)) != 0)
+    {
+        LOG_ERROR("Can't change mta message ack");
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
 
 #ifndef MOBILE

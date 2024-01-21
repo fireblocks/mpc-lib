@@ -159,8 +159,11 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     std::map<uint64_t, std::vector<commitment>> commitments;
     for (auto i = services.begin(); i != services.end(); ++i)
     {
-        auto& commitment = commitments[i->first];
-        REQUIRE_NOTHROW(i->second->signing_service.start_signing(keyid, txid, data, "", players_str, players_ids, commitment));
+        auto& commits = commitments[i->first];
+        REQUIRE_NOTHROW(i->second->signing_service.start_signing(keyid, txid, data, "", players_str, players_ids, commits));
+
+        std::vector<commitment> repeat_commitments;
+        REQUIRE_THROWS_AS(i->second->signing_service.start_signing(keyid, txid, data, "", players_str, players_ids, repeat_commitments), cosigner_exception);
     }
 
     std::map<uint64_t, std::vector<elliptic_curve_point>> Rs;
@@ -168,6 +171,9 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     {
         auto& R = Rs[i->first];
         REQUIRE_NOTHROW(i->second->signing_service.store_commitments(txid, commitments, MPC_CMP_ONLINE_VERSION, R));
+
+        std::vector<elliptic_curve_point> repeat_Rs;
+        REQUIRE_THROWS_AS(i->second->signing_service.store_commitments(txid, commitments, MPC_CMP_ONLINE_VERSION, repeat_Rs), cosigner_exception);
     }
     commitments.clear();
 
@@ -176,6 +182,9 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     {
         auto& si = sis[i->first];
         REQUIRE_NOTHROW(i->second->signing_service.broadcast_si(txid, Rs, si));
+
+        std::vector<elliptic_curve_scalar> repeat_si;
+        REQUIRE_NOTHROW(i->second->signing_service.broadcast_si(txid, Rs, repeat_si));
     }
     Rs.clear();
 
@@ -183,6 +192,9 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         REQUIRE_NOTHROW(i->second->signing_service.get_eddsa_signature(txid, sis, sigs));
+
+        std::vector<eddsa_signature> repeat_sigs;
+        REQUIRE_THROWS_AS(i->second->signing_service.get_eddsa_signature(txid, sis, repeat_sigs), cosigner_exception);
     }
     sis.clear();
 
