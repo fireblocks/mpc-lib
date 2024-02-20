@@ -8,6 +8,8 @@
 
 #include <openssl/sha.h>
 
+#include <inttypes.h>
+
 namespace fireblocks
 {
 namespace common
@@ -53,12 +55,12 @@ void cmp_ecdsa_signing_service::ack_mta_request(uint32_t count, const std::map<u
         auto it = requests.find(*i);
         if (it == requests.end())
         {
-            LOG_ERROR("missing commitment from player %lu", *i);
+            LOG_ERROR("missing commitment from player %" PRIu64, *i);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         else if (it->second.size() != count)
         {
-            LOG_ERROR("got %lu mta requests from player %lu, but the request is for %u presigning data", it->second.size(), *i, count);
+            LOG_ERROR("got %lu mta requests from player %" PRIu64 ", but the request is for %" PRIu32 " presigning data", it->second.size(), *i, count);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         SHA256_Update(&ctx, &it->first, sizeof(uint64_t));
@@ -127,7 +129,7 @@ cmp_mta_deltas cmp_ecdsa_signing_service::mta_verify(ecdsa_signing_data& data, c
         auto status = range_proof_exponent_zkpok_verify(aux_keys.ring_pedersen.get(), other.paillier.get(), algebra, other_aad.data(), other_aad.size(), &pub.GAMMA.data, &proof);
         if (status != ZKP_SUCCESS)
         {
-            LOG_ERROR("Failed to verify gamma log proof from player %lu block %lu, error %d", it->first, index, status);
+            LOG_ERROR("Failed to verify gamma log proof from player %" PRIu64 " block %lu, error %d", it->first, index, status);
             throw_cosigner_exception(status);
         }
         pub.gamma_commitment.clear();
@@ -172,7 +174,7 @@ void cmp_ecdsa_signing_service::calc_R(ecdsa_signing_data& data, elliptic_curve_
             continue;
         if (it->second[index].proof.size() != sizeof(diffie_hellman_log_zkp_t))
         {
-            LOG_ERROR("ddh proof from player %lu block %lu has wrong size %lu", it->first, index, it->second[index].proof.size());
+            LOG_ERROR("ddh proof from player %" PRIu64 " block %lu has wrong size %lu", it->first, index, it->second[index].proof.size());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         auto aad = build_aad(uuid, it->first, metadata.seed);
@@ -185,7 +187,7 @@ void cmp_ecdsa_signing_service::calc_R(ecdsa_signing_data& data, elliptic_curve_
         auto status = diffie_hellman_log_zkp_verify(algebra, aad.data(), aad.size(), &data.GAMMA.data, &pub, (diffie_hellman_log_zkp_t*)it->second[index].proof.data());
         if (status != ZKP_SUCCESS)
         {
-            LOG_ERROR("Failed to verify ddh proof from player %lu block %lu, error %d", it->first, index, status);
+            LOG_ERROR("Failed to verify ddh proof from player %" PRIu64 " block %lu, error %d", it->first, index, status);
             throw_cosigner_exception(status);
         }
         throw_cosigner_exception(algebra->add_scalars(algebra, &data.delta.data, data.delta.data, sizeof(elliptic_curve256_scalar_t), it->second[index].delta.data, sizeof(elliptic_curve256_scalar_t)));

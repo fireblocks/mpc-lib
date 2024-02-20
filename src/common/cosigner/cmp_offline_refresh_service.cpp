@@ -8,6 +8,8 @@
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
 #include "logging/logging_t.h"
 
+#include <inttypes.h>
+
 namespace fireblocks
 {
 namespace common
@@ -46,7 +48,7 @@ void cmp_offline_refresh_service::refresh_key_request(const std::string& tenant_
     {
         if (metadata.players_info.find(*i) == metadata.players_info.end())
         {
-            LOG_ERROR("playerid %lu is not part of key, for keyid = %s", *i, key_id.c_str());
+            LOG_ERROR("playerid %" PRIu64 " is not part of key, for keyid = %s", *i, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -93,7 +95,7 @@ void cmp_offline_refresh_service::refresh_key(const std::string& key_id, const s
     {
         if (metadata.players_info.find(i->first) == metadata.players_info.end())
         {
-            LOG_ERROR("playerid %lu is not part of key, for keyid = %s", i->first, key_id.c_str());
+            LOG_ERROR("playerid %" PRIu64 " is not part of key, for keyid = %s", i->first, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -113,14 +115,14 @@ void cmp_offline_refresh_service::refresh_key(const std::string& key_id, const s
         auto my_seed_it = i->second.find(my_id);
         if (my_seed_it == i->second.end())
         {
-            LOG_ERROR("Player %lu didn't send seed to me", player_id);
+            LOG_ERROR("Player %" PRIu64 " didn't send seed to me", player_id);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
         auto decrypt_seed = _service.decrypt_message(my_seed_it->second);
         if (decrypt_seed.size() != sizeof(commitments_sha256_t))
         {
-            LOG_ERROR("Player %lu sent invalid seed to me", player_id);
+            LOG_ERROR("Player %" PRIu64 " sent invalid seed to me", player_id);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         commitments_sha256_t seed_from_player;

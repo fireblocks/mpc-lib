@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <tests/catch.hpp>
 
@@ -144,6 +145,8 @@ private:
     {
         RAND_bytes(random_data, len);
     }
+
+    uint64_t now_msec() const override { return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()).time_since_epoch().count(); }
 
     const std::string get_current_tenantid() const {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const {return _id;}

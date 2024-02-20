@@ -8,6 +8,8 @@
 
 #include <openssl/sha.h>
 
+#include <inttypes.h>
+
 namespace fireblocks
 {
 namespace common
@@ -68,7 +70,7 @@ void asymmetric_eddsa_cosigner_client::start_signature_preprocessing(const std::
     {
         if (metadata.players_info.find(*i) == metadata.players_info.end())
         {
-            LOG_ERROR("Player %lu is not part of key %s", *i, key_id.c_str());
+            LOG_ERROR("Player %" PRIu64 " is not part of key %s", *i, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -118,7 +120,7 @@ uint64_t asymmetric_eddsa_cosigner_client::eddsa_sign_offline(const std::string&
     {
         if (metadata.players_info.find(*i) == metadata.players_info.end())
         {
-            LOG_ERROR("player %lu is not part of key %s", *i, key_id.c_str());
+            LOG_ERROR("player %" PRIu64 " is not part of key %s", *i, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -148,12 +150,12 @@ uint64_t asymmetric_eddsa_cosigner_client::eddsa_sign_offline(const std::string&
         }
         else if (metadata.players_info.find(i->first) == metadata.players_info.end())
         {
-            LOG_ERROR("got Rs from player %lu who is not part of key %s", i->first, key_id.c_str());
+            LOG_ERROR("got Rs from player %" PRIu64 " who is not part of key %s", i->first, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         else if (i->second.Rs.size() != blocks)
         {
-            LOG_ERROR("got %lu Rs from player %lu but the siging request is for %lu blocks", i->second.Rs.size(), i->first, blocks);
+            LOG_ERROR("got %lu Rs from player %" PRIu64 " but the siging request is for %lu blocks", i->second.Rs.size(), i->first, blocks);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
@@ -168,7 +170,7 @@ uint64_t asymmetric_eddsa_cosigner_client::eddsa_sign_offline(const std::string&
             {
                 if (memcmp(first_player->second.Rs[j].data, i->second.Rs[j].data, sizeof(elliptic_curve256_point_t)) != 0)
                 {
-                    LOG_ERROR("R indexed %lu from player %lu is different from player %lu R", j, i->first, first_player->first);
+                    LOG_ERROR("R indexed %lu from player %" PRIu64 " is different from player %" PRIu64 " R", j, i->first, first_player->first);
                     throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
                 }
             }
@@ -178,7 +180,7 @@ uint64_t asymmetric_eddsa_cosigner_client::eddsa_sign_offline(const std::string&
         SHA256_Final(md.data(), &sha);
         if (md != i->second.R_commitment)
         {
-            LOG_ERROR("R commitments %s from player %lu is different from claculated %s", HexStr(i->second.R_commitment.begin(), i->second.R_commitment.end()).c_str(), i->first, HexStr(md.begin(), md.end()).c_str());
+            LOG_ERROR("R commitments %s from player %" PRIu64 " is different from claculated %s", HexStr(i->second.R_commitment.begin(), i->second.R_commitment.end()).c_str(), i->first, HexStr(md.begin(), md.end()).c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
