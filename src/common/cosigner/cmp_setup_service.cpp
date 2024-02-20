@@ -8,6 +8,8 @@
 
 #include <algorithm>
 
+#include <inttypes.h>
+
 namespace fireblocks
 {
 namespace common
@@ -60,7 +62,7 @@ void cmp_setup_service::generate_setup_commitments(const std::string& key_id, co
     uint64_t my_id = _service.get_id_from_keyid(key_id);
     if (std::find(players_ids.begin(), players_ids.end(), my_id) == players_ids.end())
     {
-        LOG_ERROR("my id (%lu) is not part of setup request, abort", my_id);
+        LOG_ERROR("my id (%" PRIu64 ") is not part of setup request, abort", my_id);
         throw cosigner_exception(cosigner_exception::BAD_KEY);
     }
 
@@ -139,7 +141,7 @@ void cmp_setup_service::store_setup_commitments(const std::string& key_id, const
     {
         if (!commitments.count(i->first))
         {
-            LOG_ERROR("missing commitment from player %lu", i->first);
+            LOG_ERROR("missing commitment from player %" PRIu64, i->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -245,14 +247,14 @@ void cmp_setup_service::create_secret(const std::string& key_id, const std::map<
         auto player_it = metadata.players_info.find(i->first);
         if (player_it == metadata.players_info.end())
         {
-            LOG_ERROR("player %lu is not part of key %s", i->first, key_id.c_str());
+            LOG_ERROR("player %" PRIu64 " is not part of key %s", i->first, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
         auto proof_it = i->second.find(my_id);
         if (proof_it == i->second.end())
         {
-            LOG_ERROR("missing proof from player %lu", i->first);
+            LOG_ERROR("missing proof from player %" PRIu64, i->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         
@@ -260,7 +262,7 @@ void cmp_setup_service::create_secret(const std::string& key_id, const std::map<
         auto status = range_proof_paillier_large_factors_zkp_verify(player_it->second.paillier.get(), aux.ring_pedersen.get(), aad.data(), aad.size(), proof_it->second.data(), proof_it->second.size());
         if (status != ZKP_SUCCESS)
         {
-            LOG_ERROR("Failed to verify player %lu paillier key has large factors, error %d", i->first, status);
+            LOG_ERROR("Failed to verify player %" PRIu64 " paillier key has large factors, error %d", i->first, status);
             throw_cosigner_exception(status);
         }
     }
@@ -339,7 +341,7 @@ void cmp_setup_service::add_user_request(const std::string& key_id, cosigner_sig
     for (auto i = players_ids.begin(); i != players_ids.end(); ++i)
         if (metadata.players_info.find(*i) != metadata.players_info.end())
         {
-            LOG_ERROR("playerid %lu is already part of key, for keyid = %s", *i, key_id.c_str());
+            LOG_ERROR("playerid %" PRIu64 " is already part of key, for keyid = %s", *i, key_id.c_str());
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
@@ -376,7 +378,7 @@ void cmp_setup_service::add_user(const std::string& tenant_id, const std::string
     {
         if (n != i->second.encrypted_shares.size())
         {
-            LOG_ERROR("Number of new player (%lu) from player %lu is different from the number of players (%lu) from player %lu", i->second.encrypted_shares.size(), i->first, n, data.begin()->first);
+            LOG_ERROR("Number of new player (%lu) from player %" PRIu64 " is different from the number of players (%lu) from player %" PRIu64, i->second.encrypted_shares.size(), i->first, n, data.begin()->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -417,12 +419,12 @@ void cmp_setup_service::add_user(const std::string& tenant_id, const std::string
         {
             if (memcmp(pubkey, i->second.public_key.data, sizeof(elliptic_curve256_point_t)) != 0)
             {
-                LOG_ERROR("Public key from player %lu is different from the key sent by player %lu", i->first, data.begin()->first);
+                LOG_ERROR("Public key from player %" PRIu64 " is different from the key sent by player %" PRIu64, i->first, data.begin()->first);
                 throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
             }
             if (i->second.encrypted_shares.size() != players_ids.size())
             {
-                LOG_ERROR("Number of shares from player %lu is different from the number sent by player %lu", i->first, data.begin()->first);
+                LOG_ERROR("Number of shares from player %" PRIu64 " is different from the number sent by player %" PRIu64, i->first, data.begin()->first);
                 throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
             }
 
@@ -430,7 +432,7 @@ void cmp_setup_service::add_user(const std::string& tenant_id, const std::string
             {
                 if (std::find(players_ids.begin(), players_ids.end(), j->first) == players_ids.end())
                 {
-                    LOG_ERROR("Shares for player %lu from player %lu wasn't sent by player %lu", j->first, i->first, data.begin()->first);
+                    LOG_ERROR("Shares for player %" PRIu64 " from player %" PRIu64 " wasn't sent by player %" PRIu64, j->first, i->first, data.begin()->first);
                     throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
                 }
             }
@@ -439,7 +441,7 @@ void cmp_setup_service::add_user(const std::string& tenant_id, const std::string
         auto it = i->second.encrypted_shares.find(my_id);
         if (it == i->second.encrypted_shares.end())
         {
-            LOG_ERROR("Player %lu didnt sent share to me", i->first);
+            LOG_ERROR("Player %" PRIu64 " didnt send share to me", i->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         auto share = _service.decrypt_message(it->second);
@@ -542,24 +544,24 @@ void cmp_setup_service::deserialize_auxiliary_keys(uint64_t id, const std::vecto
     paillier.reset(paillier_public_key_deserialize(paillier_public_key.data(), paillier_public_key.size()), paillier_free_public_key);
     if (!paillier)
     {
-        LOG_ERROR("failed to parse paillier public key from player %lu", id);
+        LOG_ERROR("failed to parse paillier public key from player %" PRIu64, id);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     if (paillier_public_key_size(paillier.get()) < PAILLIER_KEY_SIZE)
     {
-        LOG_ERROR("paillier public key from player %lu size %u, is smaller then the minimum key size %u", id, paillier_public_key_size(paillier.get()), PAILLIER_KEY_SIZE);
+        LOG_ERROR("paillier public key from player %" PRIu64 " size %u, is smaller then the minimum key size %u", id, paillier_public_key_size(paillier.get()), PAILLIER_KEY_SIZE);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     ring_pedersen.reset(ring_pedersen_public_deserialize(ring_pedersen_public_key.data(), ring_pedersen_public_key.size()), ring_pedersen_free_public);
     if (!ring_pedersen)
     {
-        LOG_ERROR("failed to parse ring pedersen public key from player %lu", id);
+        LOG_ERROR("failed to parse ring pedersen public key from player %" PRIu64, id);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     if (ring_pedersen_public_size(ring_pedersen.get()) < RING_PEDERSEN_KEY_SIZE)
     {
-        LOG_ERROR("ring pedersen public key from player %lu size %u, is smaller then the minimum key size %u", id, ring_pedersen_public_size(ring_pedersen.get()), RING_PEDERSEN_KEY_SIZE);
+        LOG_ERROR("ring pedersen public key from player %" PRIu64 " size %u, is smaller then the minimum key size %u", id, ring_pedersen_public_size(ring_pedersen.get()), RING_PEDERSEN_KEY_SIZE);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 }
@@ -624,7 +626,7 @@ void cmp_setup_service::create_setup_commitment(const std::string& key_id, uint6
         auto status = commitments_ctx_verify_final(ctx);
         if (status != COMMITMENTS_SUCCESS)
         {
-            LOG_ERROR("failed to verify commitment for player %lu error %d", id, status);
+            LOG_ERROR("failed to verify commitment for player %" PRIu64 " error %d", id, status);
             throw_cosigner_exception(status);
         }
     }
@@ -660,7 +662,7 @@ void cmp_setup_service::verify_and_load_setup_decommitments(const std::string& k
         auto decommit_it = decommitments.find(i->first);
         if (decommit_it == decommitments.end())
         {
-            LOG_ERROR("missing decommitment from player %lu", i->first);
+            LOG_ERROR("missing decommitment from player %" PRIu64, i->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         commitment commit = i->second;
@@ -668,7 +670,7 @@ void cmp_setup_service::verify_and_load_setup_decommitments(const std::string& k
 
         if (memcmp(ack, decommit_it->second.ack, sizeof(commitments_sha256_t)) != 0)
         {
-            LOG_ERROR("ack from player %lu is different from my claculated ack", i->first);
+            LOG_ERROR("ack from player %" PRIu64 " is different from my claculated ack", i->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
@@ -714,7 +716,7 @@ void cmp_setup_service::verify_setup_proofs(const std::string& key_id, const cmp
         auto proof = proofs.find(i->first);
         if (proof == proofs.end())
         {
-            LOG_ERROR("missing proof from player %lu", i->first);
+            LOG_ERROR("missing proof from player %" PRIu64, i->first);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (i->first == my_id)
@@ -727,21 +729,21 @@ void cmp_setup_service::verify_setup_proofs(const std::string& key_id, const cmp
         auto status = schnorr_zkp_verify(algebra, aad.data(), aad.size(), &i->second.public_share.data, &schnorr);
         if (status != ZKP_SUCCESS)
         {
-            LOG_ERROR("Failed to verify schnorr zkp from player %lu", i->first);
+            LOG_ERROR("Failed to verify schnorr zkp from player %" PRIu64, i->first);
             throw_cosigner_exception(status);
         }
 
         auto paillier_status = paillier_verify_paillier_blum_zkp(i->second.paillier.get(), aad.data(), aad.size(), proof->second.paillier_blum_zkp.data(), proof->second.paillier_blum_zkp.size());
         if (paillier_status != PAILLIER_SUCCESS)
         {
-            LOG_ERROR("Failed to verify paillier blum zkp from player %lu", i->first);
-            throw_paillier_exception(paillier_status);   
+            LOG_ERROR("Failed to verify paillier blum zkp from player %" PRIu64, i->first);
+            throw_paillier_exception(paillier_status);
         }
 
         status = ring_pedersen_parameters_zkp_verify(i->second.ring_pedersen.get(), aad.data(), aad.size(), proof->second.ring_pedersen_param_zkp.data(), proof->second.ring_pedersen_param_zkp.size());
         if (status != ZKP_SUCCESS)
         {
-            LOG_ERROR("Failed to verify ring pedersen parameters zkp from player %lu", i->first);
+            LOG_ERROR("Failed to verify ring pedersen parameters zkp from player %" PRIu64, i->first);
             throw_cosigner_exception(status);   
         }
     }

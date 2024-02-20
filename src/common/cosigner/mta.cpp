@@ -11,11 +11,12 @@
 #define LOG_ERROR(message, ...) printf((message), ##__VA_ARGS__);putchar('\n')
 #endif
 
-#include <assert.h>
-
 #include <openssl/bn.h>
 #include <openssl/rand.h>
 #include <openssl/err.h>
+
+#include <assert.h>
+#include <inttypes.h>
 
 namespace fireblocks
 {
@@ -565,7 +566,7 @@ elliptic_curve_scalar decrypt_mta_response(uint64_t other_id, const elliptic_cur
     auto status = paillier_decrypt_openssl_internal(my_key.get(), resp, alpha.get(), ctx.get());
     if (status != PAILLIER_SUCCESS)
     {
-        LOG_ERROR("Failed to decrypt mta response from player %lu, error %ld", other_id, status);
+        LOG_ERROR("Failed to decrypt mta response from player %" PRIu64 ", error %ld", other_id, status);
         throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
     if (!BN_rshift1(tmp, my_key->pub.n))
@@ -690,12 +691,12 @@ void response_verifier::process(const byte_vector_t& request, cmp_mta_message& r
     // start with range check
     if ((size_t)BN_num_bytes(proof.z1) > sizeof(elliptic_curve256_scalar_t) + MTA_ZKP_EPSILON_SIZE)
     {
-        LOG_ERROR("player %lu z1 (%d bits) is out of range", _other_id, BN_num_bits(proof.z1));
+        LOG_ERROR("player %" PRIu64 " z1 (%d bits) is out of range", _other_id, BN_num_bits(proof.z1));
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     if ((size_t)BN_num_bytes(proof.z2) > sizeof(elliptic_curve256_scalar_t) * BETA_HIDING_FACTOR + MTA_ZKP_EPSILON_SIZE)
     {
-        LOG_ERROR("player %lu z2 (%d bits) is out of range", _other_id, BN_num_bits(proof.z2));
+        LOG_ERROR("player %" PRIu64 " z2 (%d bits) is out of range", _other_id, BN_num_bits(proof.z2));
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
@@ -751,7 +752,7 @@ void response_verifier::process(const byte_vector_t& request, cmp_mta_message& r
 
     if (memcmp(p1, p2, sizeof(elliptic_curve256_point_t)) != 0)
     {
-        LOG_ERROR("Failed to verify Bx*X^e == g^z1 for player %lu", _other_id);
+        LOG_ERROR("Failed to verify Bx*X^e == g^z1 for player %" PRIu64, _other_id);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     process_paillier(e, mta_request, mta_response, commitment, proof);
@@ -777,7 +778,7 @@ void response_verifier::verify()
         }
         if (BN_cmp(tmp, _mta_B[i]) != 0)
         {
-            LOG_ERROR("Failed to verify mta ro^N == B for player %lu", _other_id);
+            LOG_ERROR("Failed to verify mta ro^N == B for player %" PRIu64, _other_id);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
@@ -788,7 +789,7 @@ void response_verifier::verify()
         }
         if (BN_cmp(tmp, _commitment_B[i]) != 0)
         {
-            LOG_ERROR("Failed to verify commitment ro^N == B for player %lu", _other_id);
+            LOG_ERROR("Failed to verify commitment ro^N == B for player %" PRIu64, _other_id);
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
@@ -803,7 +804,7 @@ void response_verifier::verify()
 
     if (BN_cmp(_pedersen_t_exp, _pedersen_B) != 0)
     {
-        LOG_ERROR("Failed to verify commitment t^exp_t == B for player %lu", _other_id);
+        LOG_ERROR("Failed to verify commitment t^exp_t == B for player %" PRIu64, _other_id);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 }

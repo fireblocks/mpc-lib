@@ -44,6 +44,8 @@ private:
         RAND_bytes(random_data, len);
     }
 
+    uint64_t now_msec() const override { return std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now()).time_since_epoch().count(); }
+
     const std::string get_current_tenantid() const {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const {return _id;}
     void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const {assert(0);}

@@ -31,7 +31,7 @@ public:
     virtual uint64_t get_id_from_keyid(const std::string& key_id) const = 0;
     // derive a key share from a master seed defined by derive_from
     virtual void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const = 0;
-    // encrypts a message for spesific player, used to send unicast messages in the add user and key refresh flows
+    // encrypts a message for specific player, used to send unicast messages in the add user and key refresh flows
     virtual byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const = 0;
     // decrypts a message sent to the signer in the add user flow
     virtual byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const = 0;
@@ -44,6 +44,9 @@ public:
     virtual void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const = 0;
     // returns if the player id is a client device, used in asymmetric protocols
     virtual bool is_client_id(uint64_t player_id) const = 0;
+
+    // get the current time in millseconds since the Unix Epoch
+    virtual uint64_t now_msec() const { return 0; }
 };
 
 }
