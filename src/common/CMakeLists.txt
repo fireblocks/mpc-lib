@@ -30,7 +30,7 @@ set(COSIGNER_FILES
 add_library(cosigner SHARED ${COSIGNER_FILES})
 
 target_compile_options(cosigner PRIVATE
-    -Wall -Wextra -Wvla -Wswitch-enum -Wno-missing-field-initializers -Wno-unknown-pragmas -fstack-protector-strong -fdiagnostics-color=always
+    -Wall -Wextra -Wvla -Wswitch-enum -Wno-missing-field-initializers -Wno-unknown-pragmas -fdiagnostics-color=always
     $<$<COMPILE_LANGUAGE:CXX>:
         -Wno-overloaded-virtual
     >
@@ -41,6 +41,10 @@ target_compile_options(cosigner PRIVATE
         -DNDEBUG -UEDEBUG -UDEBUG
     >
 )
+
+if(NOT EMSCRIPTEN)
+    target_compile_options(cosigner PRIVATE -fstack-protector-strong)
+endif()
 
 set(LINKER_VERSION_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/lib.lds)
 target_link_options(cosigner PRIVATE
