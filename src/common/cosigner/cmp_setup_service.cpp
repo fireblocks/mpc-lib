@@ -69,7 +69,7 @@ void cmp_setup_service::generate_setup_commitments(const std::string& key_id, co
     std::set<uint64_t> distinct_players_ids(players_ids.begin(), players_ids.end()); // make the players_ids list unique
     if (distinct_players_ids.size() != players_ids.size())
     {
-        LOG_ERROR("Recived setup request with duplicated player id, players_ids size %lu but only %lu uniq ones", players_ids.size(), distinct_players_ids.size());
+        LOG_ERROR("Received setup request with duplicated player id, players_ids size %lu but only %lu uniq ones", players_ids.size(), distinct_players_ids.size());
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
@@ -275,7 +275,7 @@ void cmp_setup_service::create_secret(const std::string& key_id, const std::map<
     elliptic_curve_scalar key;
     _key_persistency.load_key(key_id, algo, key.data);
 
-    LOG_INFO("backuping keyid %s..", key_id.c_str());
+    LOG_INFO("backing up keyid %s..", key_id.c_str());
     if (!_service.backup_key(key_id, metadata.algorithm, key.data, metadata, aux))
     {
         LOG_ERROR("failed to backup key id %s", key_id.c_str());
@@ -294,7 +294,7 @@ void cmp_setup_service::add_user_request(const std::string& key_id, cosigner_sig
 
     if (distinct_players_ids.size() != players_ids.size())
     {
-        LOG_ERROR("Recived add user request with duplicated player id, players_ids size %lu but only %lu uniq ones", players_ids.size(), distinct_players_ids.size());
+        LOG_ERROR("Received add user request with duplicated player id, players_ids size %lu but only %lu uniq ones", players_ids.size(), distinct_players_ids.size());
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     const uint8_t n = players_ids.size();

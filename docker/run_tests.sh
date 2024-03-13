@@ -28,11 +28,17 @@ if [ x${tag} == "x" ]; then
 fi
 
 IMAGE_NAME=mpc-lib-tester-$tag
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+CURRENT_DIR=`pwd`
 
-docker build -f ${Dockerfile} . -t $IMAGE_NAME
+cd ${SCRIPT_DIR}/..
+
+docker build -f ${CURRENT_DIR}/${Dockerfile} . -t $IMAGE_NAME
 
 docker run \
     --rm \
-    ${IMAGE_NAME} bash -c "make -j && make run-tests"
+    ${IMAGE_NAME} bash -c "mkdir build_${IMAGE_NAME};cd build_${IMAGE_NAME};cmake ..;make -j && make -j test"
+
+cd -
 
 echo "Done"

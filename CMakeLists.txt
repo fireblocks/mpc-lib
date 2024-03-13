@@ -6,7 +6,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(NOT TARGET OpenSSL::Crypto)
     set(OPENSSL_USE_STATIC_LIBS TRUE)
-    find_package(OpenSSL 1.1.1 EXACT REQUIRED)
+    add_compile_definitions(OPENSSL_API_COMPAT=0x10101000L)
+    find_package(OpenSSL 1.1.1 REQUIRED)
 endif()
 
 add_subdirectory(src/common)

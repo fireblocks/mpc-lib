@@ -6,34 +6,34 @@ default:
     - apt update
     - DEBIAN_FRONTEND=noninteractive apt install -y build-essential cmake pkg-config uuid-dev libssl-dev libsecp256k1-dev
 
-build-make:
+build-release:
   stage: build
   script:
-    - make -C src
+    - mkdir build-release && cmake -S . -B build-release -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    - cmake --build build-release -j $(nproc)
   artifacts:
     paths:
-      - src/common/libcosigner.so
+      - build-release/
 
-tests-make:
+tests-release:
   stage: test
   needs:
-    - build-make
+    - build-release
   script:
-    - make -C test -j $(nproc)
-    - make run-tests
+    - cd build-release && ctest --output-on-failure
 
-build-cmake:
+build-debug:
   stage: build
   script:
-    - mkdir build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-    - cmake --build build -j $(nproc)
+    - mkdir build-debug && cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
+    - cmake --build build-debug -j $(nproc)
   artifacts:
     paths:
-      - build/
+      - build-debug/
 
-tests-cmake:
+tests-debug:
   stage: test
   needs:
-    - build-cmake
+    - build-debug
   script:
-    - cd build && ctest --output-on-failure
+    - cd build-debug && ctest --output-on-failure
