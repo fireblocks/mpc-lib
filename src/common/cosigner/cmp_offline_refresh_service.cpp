@@ -209,7 +209,7 @@ void cmp_offline_refresh_service::refresh_key_fast_ack(const std::string& tenant
     }
     _refresh_key_persistency.commit(key_id, request_id);
 
-    LOG_INFO("backuping keyid %s..", key_id.c_str());
+    LOG_INFO("backing up keyid %s..", key_id.c_str());
     cmp_key_metadata metadata;
     _key_persistency.load_key_metadata(key_id, metadata, false);
     elliptic_curve_scalar key;

@@ -1,0 +1,16 @@
+# FindUUID.cmake
+find_path(UUID_INCLUDE_DIR uuid/uuid.h)
+find_library(UUID_LIBRARY NAMES uuid)
+
+message(STATUS "UUID_LIBRARY=${UUID_LIBRARY}")
+message(STATUS "UUID_INCLUDE_DIR=${UUID_INCLUDE_DIR}")
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(UUID DEFAULT_MSG UUID_LIBRARY UUID_INCLUDE_DIR)
+
+if(UUID_FOUND AND NOT TARGET UUID::UUID)
+  add_library(UUID::UUID UNKNOWN IMPORTED)
+  set_target_properties(UUID::UUID PROPERTIES
+    IMPORTED_LOCATION "${UUID_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${UUID_INCLUDE_DIR}")
+endif()
