@@ -857,6 +857,29 @@ TEST_CASE("paillier_large_factors", "verify") {
         REQUIRE(range_proof_paillier_large_factors_zkp_verify(paillier_pub, ring_pedersen_priv, (const unsigned char*)"hello world", sizeof("hello world") - 1, proof, len) == ZKP_SUCCESS);
         delete[] proof;
     }
+    
+    SECTION("valid large keys") {
+        ring_pedersen_public_t*  large_ring_pedersen_pub;
+        ring_pedersen_private_t* large_ring_pedersen_priv;
+        auto status = ring_pedersen_generate_key_pair(2048, &large_ring_pedersen_pub, &large_ring_pedersen_priv);
+        paillier_public_key_t*  large_paillier_pub = NULL;
+        paillier_private_key_t* large_paillier_priv = NULL;
+        long res = paillier_generate_key_pair(3072, &large_paillier_pub, &large_paillier_priv);
+        REQUIRE(status == RING_PEDERSEN_SUCCESS);
+        REQUIRE(res == PAILLIER_SUCCESS);
+        
+        uint32_t len = 0;
+        REQUIRE(range_proof_paillier_large_factors_zkp_generate(large_paillier_priv, large_ring_pedersen_pub, (const unsigned char*)"hello world", sizeof("hello world") - 1, NULL, 0, &len) == ZKP_INSUFFICIENT_BUFFER);
+        uint8_t* proof = new uint8_t[len];
+        REQUIRE(range_proof_paillier_large_factors_zkp_generate(large_paillier_priv, large_ring_pedersen_pub, (const unsigned char*)"hello world", sizeof("hello world") - 1, proof, len, &len) == ZKP_SUCCESS);
+        REQUIRE(range_proof_paillier_large_factors_zkp_verify(large_paillier_pub, large_ring_pedersen_priv, (const unsigned char*)"hello world", sizeof("hello world") - 1, proof, len) == ZKP_SUCCESS);
+        delete[] proof;
+    
+        paillier_free_private_key(large_paillier_priv);
+        paillier_free_public_key(large_paillier_pub);
+        ring_pedersen_free_private(large_ring_pedersen_priv);
+        ring_pedersen_free_public(large_ring_pedersen_pub);
+    }
 
     SECTION("invalid aad") {
         REQUIRE(status == RING_PEDERSEN_SUCCESS);
