@@ -116,10 +116,29 @@ protected:
         return (p[0] & 1) == 1;
     }
 
+    static inline bool is_greater_or_equal(const uint8_t* a, const uint8_t* b, uint32_t len) {
+        if (!a || !b || !len)
+            throw_cosigner_exception(ELLIPTIC_CURVE_ALGEBRA_UNKNOWN_ERROR);
+
+        uint32_t i = 0;
+        while (i < len) {
+            if (a[i] < b[i])
+                return false;
+            if (a[i] > b[i])
+                return true;
+            ++i;
+        }
+        return true;
+    }
     static inline bool is_positive(cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& n)
     {
         if (algorithm == ECDSA_STARK)
             return n[0] < 4; // stark curve is 252bit
+        if (algorithm == ECDSA_SECP256R1) {
+            static const uint8_t half_n_first_8_bytes[] = {0x7F, 0xFF, 0xFF, 0xFF, 0x80, 0x00, 0x00, 0x00};
+            // check only the first 8 bytes, which gives enough precision
+            return is_greater_or_equal(n, half_n_first_8_bytes, sizeof(half_n_first_8_bytes)) == false;
+        }
         return (n[0] & 0x80) == 0;
     }
 
