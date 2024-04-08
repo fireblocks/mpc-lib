@@ -69,7 +69,8 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
         std::lock_guard<std::mutex> lock(_mutex);
         if (_preprocessed_data.find(key_id) != _preprocessed_data.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        _preprocessed_data.emplace(key_id, std::move(std::vector<ed25519_scalar_t>(size)));
+        //_preprocessed_data.emplace(key_id, std::move(std::vector<ed25519_scalar_t>(size)));
+        _preprocessed_data.emplace(key_id, std::vector<ed25519_scalar_t>(size));
     }
 
     void store_preprocessed_data(const std::string& key_id, uint64_t index, const ed25519_scalar_t& k) override

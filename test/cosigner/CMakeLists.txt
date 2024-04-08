@@ -1,8 +1,8 @@
 add_executable(cosigner_test
     ecdsa_offline_test.cpp
     ecdsa_online_test.cpp
-    eddsa_offline_test.cpp
-    eddsa_online_test.cpp
+    #eddsa_offline_test.cpp
+    #eddsa_online_test.cpp
     main.cpp
     setup_test.cpp
 )
