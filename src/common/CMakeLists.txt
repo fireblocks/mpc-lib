@@ -43,9 +43,9 @@ target_compile_options(cosigner PRIVATE
 )
 
 set(LINKER_VERSION_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/lib.lds)
-target_link_options(cosigner PRIVATE
-    "LINKER:--version-script=${LINKER_VERSION_SCRIPT}"
-    "LINKER:--no-undefined")
+#target_link_options(cosigner PRIVATE
+#    "LINKER:--version-script=${LINKER_VERSION_SCRIPT}"
+#    "LINKER:--no-undefined")
 set_target_properties(cosigner PROPERTIES LINK_DEPENDS ${LINKER_VERSION_SCRIPT})
 
 target_include_directories(cosigner PUBLIC ${PROJECT_SOURCE_DIR}/include)

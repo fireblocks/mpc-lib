@@ -1,0 +1,56 @@
+@startuml
+title Tests
+
+state eddsa {
+    state eddsa_offline_test {
+    }
+
+    state eddsa_online_test {
+    }
+    
+}
+note bottom of eddsa
+Not drawn as we are not interested in eddsa
+end note
+
+state setup_test {
+
+    state setup {
+        [*] --> Section_secp256k1
+        Section_secp256k1 --> Section_ed25519: create_secret\n(players, ECDSA_SECP256K1, keyid, pubkey)
+        Section_ed25519 --> Section_stark: create_secret\n(players, ECDSA_SECP256R1, keyid, pubkey)
+        Section_stark --> Section_3of3: create_secret\n(players, ECDSA_STARK, keyid, pubkey)
+        Section_3of3 --> [*] : create_secret\n(players, ECDSA_SECP256K1, keyid, pubkey)
+    }
+
+    state add_user {
+        [*] --> Section_secp256k1_1
+        Section_secp256k1_1 --> Section_secp256k1_2: create_secret\n(players, ECDSA_SECP256K1, keyid, pubkey)
+        Section_secp256k1_2 --> Section_ed25519_1: add_user\n(players, new_players, ECDSA_SECP256K1, keyid, new_keyid, pubkey)
+        Section_ed25519_1 --> Section_ed25519_2: create_secret\n(players, ECDSA_SECP256R1, keyid, pubkey)
+        Section_ed25519_2 --> Section_stark_1: add_user\n(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey)
+        Section_stark_1 --> Section_stark_2: create_secret\n(players, ECDSA_STARK, keyid, pubkey)
+        Section_stark_2 --> [*]: add_user\n(players, new_players, ECDSA_STARK, keyid, new_keyid, pubkey)
+    }
+}
+
+state ecdsa_online_test {
+    [*] --> create_secret
+    create_secret --> sign: create_secret\n(players, ECDSA_SECP256K1, keyid, pubkey)
+    sign --> add_user_1: eddsa_sign\n(players, keyid, 1, pubkey, chaincode, path)
+    add_user_1 --> sign_multiple: add_user\n(players, new_players, EDDSA_ED25519, keyid, new_keyid, pubkey)\neddsa_sign\n(new_players, new_keyid, 1, pubkey, chaincode, {path});
+    sign_multiple --> mt: eddsa_sign\n(players, keyid, COUNT, pubkey, chaincode, derivation_paths)
+    mt --> keccek: pthread_create\n(threads + i, NULL, sign_thread, &param)
+    keccek --> [*]: eddsa_sign\n(players, keyid, 1, pubkey, chaincode, {path}, true)
+
+}
+
+state ecdsa_offline_test {
+
+        [*] --> Section_secp256k1_a
+        Section_secp256k1_a --> mt_a: create_secret\n(players, ECDSA_SECP256K1, keyid, pubkey)\n\necdsa_preprocess\n(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE)\n\necdsa_sign\n(services, ECDSA_SECP256K1, keyid, 0, 1, pubkey, chaincode, path)\n\nkey_refresh\n(refresh_info, keyid, pubkey)\n\necdsa_sign\n(services, ECDSA_SECP256K1, keyid, 9, 1, pubkey, chaincode, derivation_paths)
+        mt_a --> secp256r1_a: create_secret\n(players, ECDSA_SECP256K1, keyid, pubkey)\n\npthread_create\n(threads + i, NULL, sign_thread, &param)\n\necdsa_sign\n(services, ECDSA_SECP256K1, keyid, 0, derivation_paths.size(), pubkey, chaincode, derivation_paths)
+        secp256r1_a --> stark_a: create_secret\n(players, ECDSA_SECP256R1, keyid, pubkey)\n\necdsa_preprocess\n(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE)\n\n     ecdsa_sign\n(services, ECDSA_SECP256R1, keyid, 0, 1, pubkey, chaincode, {path})\n\nadd_user\n(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey)\n\necdsa_preprocess\n(new_services, new_keyid, 0, BLOCK_SIZE, BLOCK_SIZE)\n\necdsa_sign\n(new_services, ECDSA_SECP256R1, new_keyid, 0, 1, pubkey, chaincode, {path})
+        stark_a --> [*]: create_secre\n(players, ECDSA_STARK, keyid, pubkey)\n\necdsa_preprocess\n(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE)\n\necdsa_sign\n(services, ECDSA_STARK, keyid, 0, 1, pubkey, chaincode, {path})
+}
+@enduml

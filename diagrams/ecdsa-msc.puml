@@ -1,0 +1,44 @@
+@startuml
+
+title ecdsa message sequence chart
+hide footbox
+
+participant test as t
+
+participant ecdsa_offline_test as ot
+participant cmp_ecdsa_offline_signing_service as ss
+
+participant cmp_ecdsa_signing_service as core
+participant persistency as p
+
+t -> ot : ecdsa_preprocess()
+
+ot -> ss : start_ecdsa_signature_preprocessing\n(mta_requests)
+ss -> p: load_key_metadata()
+p --> ss: metadata
+ss -> p: create_preprocessed_data()
+p --> ss
+ss -> core : create_mta_request()
+ss -> p: store_preprocessing_data()
+p --> ss
+core --> ot: mta_requests
+
+ot -> ss: offline_mta_response(mta_requests)
+ss --> ot
+
+ot -> ss: offline_mta_verify(mta_responses)
+ss --> ot
+
+ot -> ss: store_presigning_data
+ss --> ot
+
+
+
+t -> ot: ecdsa_sign(partial_sigs)
+ot -> ss: ecdsa_sign(partial_sigs)
+ss -> p: load_key_meta_data()
+p --> ss: metadata
+ss --> ot: partial_sigs
+ot -> ss: ecdsa_offline_signature\n(partial_sigs, sigs)
+ss -> ss: add_scalar\n(&sig.s, sig.s, it->second[i].s)
+@enduml
