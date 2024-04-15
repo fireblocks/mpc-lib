@@ -1,0 +1,183 @@
+@startuml
+title ECDSA key setup for tests
+
+
+
+
+package setup {
+
+    abstract class setup_key_persistency {
+        store_key()
+        store_key_metadata()
+        store_auxiliary_keys()
+        store_keyid_tenant_id()
+        store_setup_data()
+        load_setup_data()
+        store_setup_commitments()
+        setup_commitments()
+        delete_temporary_key_data()
+    }
+
+    setup_key_persistency --|> cmp_key_persistency
+
+    abstract class platform_service {
+        gen_random()
+        get_current_tenantid()
+        get_id_from_keyid()
+        derive_initial_share() 
+        encrypt_for_player()
+        decrypt_message()
+        backup_key()
+        start_signing()
+        fill_signing_info_from_metadata() 
+        is_client_id()
+    }
+
+    class cmp_setup_service {
+        generate_setup_commitments()
+        store_setup_commitments()
+        generate_setup_proofs()
+        verify_setup_proofs()
+        create_secret()
+
+        add_user_request()
+        add_user()
+    }
+
+    cmp_setup_service --> platform_service
+    cmp_setup_service --> setup_key_persistency
+}
+
+class cmp_ecdsa_signing_service {
+    create_mta_request()
+    ack_mta_request()
+    create_mta_response()
+    mta_verify()
+
+    calc_R()
+    derivation_key_delta()
+    make_sig_s_positive()
+    build_aad()
+    get_algebra()
+    
+    platform_service _service
+    cmp_key_persistency _key_persistency
+}
+
+
+package offline {
+
+    class cmp_signature_preprocessed_data {
+        elliptic_curve_scalar k
+        elliptic_curve_scalar chi
+        elliptic_curve_point R
+    }
+
+    abstract class preprocessing_persistency {
+        store_preprocessing_metadata()
+        load_preprocessing_metadata()
+
+        store_preprocessing_data()
+        load_preprocessing_data()
+        delete_preprocessing_data()
+    
+        create_preprocessed_data()
+        store_preprocessed_data()
+        load_preprocessed_data()
+        delete_preprocessed_data()
+    }
+
+    class cmp_ecdsa_offline_signing_service  {
+        start_ecdsa_signature_preprocessing()
+        offline_mta_response()
+        offline_mta_verify()
+
+        store_presigning_data()
+        ecdsa_sign()
+        ecdsa_offline_signature()
+        cancel_preprocessing()
+        preprocessing_persistency _preprocessing_persistency
+        mutex _timing_map_lock
+        map<string, uint64_t> _timing_map
+    }
+    cmp_ecdsa_offline_signing_service --> preprocessing_persistency
+
+    cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing .. cmp_signature_preprocessed_data
+}
+
+cmp_ecdsa_offline_signing_service --> cmp_ecdsa_signing_service
+
+class offline_siging_info
+{
+    offline_siging_info(uint64_t id, const cmp_key_persistency& key_persistency)\n: platform_service(id), signing_service(platform_service, key_persistency, persistency)
+    sign_platform platform_service
+    preprocessing_persistency persistency
+    cmp_ecdsa_offline_signing_service signing_service
+}
+
+offline_siging_info --> cmp_setup_service 
+offline_siging_info --> cmp_ecdsa_offline_signing_service
+
+struct players_setup_info {
+    map<uint64_t, setup_persistency> players_setup_info
+}
+
+class create_secret {
+    
+    // sets up a service for each player
+    map<uint64_t, unique_ptr<setup_info>> services
+    
+    create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+}
+
+
+create_secret --> offline_siging_info :uses 1 per player
+create_secret --> cmp_setup_service::generate_setup_commitments: calls 
+create_secret --> cmp_setup_service::store_setup_commitments: calls
+create_secret --> cmp_setup_service::generate_setup_proofs: calls
+create_secret --> cmp_setup_service::verify_setup_proofs: calls
+create_secret --> cmp_setup_service::create_secret: calls
+
+
+class add_user {
+    add_user(players, new_players, ECDSA_SECP256K1, keyid, new_keyid, pubkey)
+}
+
+
+class ecdsa_preprocess{
+    ecdsa_preprocess\n(map<uint64_t, unique_ptr<offline_siging_info>> services, const string keyid, uint32_t start, uint32_t count, uint32_t total)
+
+    /'
+    create_preprocessed_data
+    create_mta_request
+
+    '/
+}
+ecdsa_preprocess --> cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing
+' offline_mta_response
+
+
+class ecdsa_sign {
+    ecdsa_sign(players, ECDSA_SECP256K1, keyid, 1, pubkey, chaincode, {path})
+    map<uint64_t, std::vector<cmp_mta_request>> mta_requests
+
+
+    /'
+    (i->second->signing_service.start_signing(keyid, txid, type, data, "", players_str, players_ids, request))
+    (i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, response))
+    (i->second->signing_service.mta_verify(txid, mta_responses, delta))
+    '/
+}
+
+ecdsa_sign --> start_signing
+
+class test {
+    players_setup_info players
+    ' map<uint64_t, setup_persistency> players_setup_info
+}
+test .. players_setup_info: uses
+test --> create_secret: calls
+test --> ecdsa_sign: calls
+test --> add_user: calls
+test --> ecdsa_preprocess: calls
+@enduml

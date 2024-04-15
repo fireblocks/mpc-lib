@@ -1,0 +1,105 @@
+@startuml
+title EDDSA
+
+struct asymmetric_eddsa_signature_data {
+    elliptic_curve_scalar k
+    elliptic_curve_point R
+    vector<uint32_t> path
+    byte_vector_t message
+    uint32_t flags
+}
+
+struct asymmetric_eddsa_signing_metadata {
+    string key_id
+    HDChaincode chaincode
+    vector<asymmetric_eddsa_signature_data> sig_data
+    set<uint64_t> signers_ids
+    uint32_t version
+    uint32_t start_index
+}
+
+asymmetric_eddsa_signing_metadata --> asymmetric_eddsa_signature_data
+
+struct eddsa_commitment
+
+class signing_persistency {
+    create_preprocessed_data()
+    store_preprocessed_data()
+    load_preprocessed_data()
+    delete_preprocessed_data()
+
+    store_commitments()
+    load_commitments()
+    delete_commitments()
+
+    store_signing_data()
+    load_signing_data()
+    delete_signing_data()
+}
+signing_persistency --> asymmetric_eddsa_signing_metadata    
+signing_persistency --> eddsa_commitment
+
+struct Rs_and_commitments {
+    vector<elliptic_curve_point> Rs
+    eddsa_commitment R_commitment
+}
+
+class asymmetric_eddsa_cosigner
+{
+    derivation_key_delta()
+    commit_to_r()
+    
+    verify_commit_to_r()
+    verify_commit_to_r()
+    
+    platform_service _service
+    cmp_key_persistency _key_persistency
+    elliptic_curve256_algebra_ctx_t _ctx
+}
+
+
+asymmetric_eddsa_cosigner --> cmp_key_persistency
+asymmetric_eddsa_cosigner --> platform_service
+
+
+abstract class preprocessing_persistency  {
+    create_preprocessed_data()
+    store_preprocessed_data()
+    load_preprocessed_data()
+    delete_preprocessed_data()
+}
+
+class asymmetric_eddsa_cosigner_client {
+    start_signature_preprocessing()
+    eddsa_sign_offline()
+    
+    preprocessing_persistency _preprocessing_persistency
+}
+asymmetric_eddsa_cosigner_client --|> asymmetric_eddsa_cosigner
+asymmetric_eddsa_cosigner_client --> preprocessing_persistency
+
+
+class asymmetric_eddsa_cosigner_server {
+    store_presigning_data()
+
+    eddsa_sign_offline()
+    decommit_r()
+    broadcast_r()
+    broadcast_si()
+    get_eddsa_signature()
+    
+    cancel_signing()
+    
+    signing_persistency _signing_persistency
+    mutex _timing_map_lock
+    map<string, uint64_t> _timing_map
+}
+
+
+asymmetric_eddsa_cosigner_server --|> asymmetric_eddsa_cosigner
+asymmetric_eddsa_cosigner_server --> signing_persistency
+asymmetric_eddsa_cosigner_server --> eddsa_signature
+asymmetric_eddsa_cosigner_server --> Rs_and_commitments
+    
+
+@enduml
