@@ -19,7 +19,7 @@ C_Objects := $(C_Files:.c=.o)
 Cpp_Files := cosigner/cosigner_exception.cpp cosigner/cmp_setup_service.cpp cosigner/cmp_offline_refresh_service.cpp cosigner/utils.cpp \
 	cosigner/cmp_ecdsa_signing_service.cpp cosigner/cmp_ecdsa_online_signing_service.cpp cosigner/cmp_ecdsa_offline_signing_service.cpp cosigner/mta.cpp \
 	cosigner/eddsa_online_signing_service.cpp cosigner/asymmetric_eddsa_cosigner.cpp cosigner/asymmetric_eddsa_cosigner_server.cpp cosigner/asymmetric_eddsa_cosigner_client.cpp \
-	blockchain/mpc/hd_derive.cpp
+	blockchain/mpc/hd_derive.cpp cosigner/timing_map.cpp
 
 Cpp_Objects := $(Cpp_Files:.cpp=.o)
 
