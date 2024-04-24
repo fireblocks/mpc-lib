@@ -451,7 +451,7 @@ uint64_t asymmetric_eddsa_cosigner_server::broadcast_si(const std::string& txid,
         {
             uint64_t diff = (_service.now_msec() - timing_it->second);
             _timing_map.erase(timing_it);
-            LOG_INFO("Finished signing %lu blocks for transaction %s (tenanat %s) in %" PRIu64 "ms", data.signers_ids.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+            LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", data.signers_ids.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
         }
     }
     else
@@ -552,7 +552,7 @@ uint64_t asymmetric_eddsa_cosigner_server::get_eddsa_signature(const std::string
     {
         uint64_t diff = (_service.now_msec() - timing_it->second);
         _timing_map.erase(timing_it);
-        LOG_INFO("Finished signing %lu blocks for transaction %s (tenanat %s) in %" PRIu64 "ms", sigs.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sigs.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
     }
 
     return my_id;

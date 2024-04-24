@@ -392,7 +392,7 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
     {
         uint64_t diff = (_service.now_msec() - timing_it->second);
         _timing_map.erase(timing_it);
-        LOG_INFO("Finished signing %lu blocks for transaction %s (tenanat %s) in %" PRIu64 "ms", sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
     }
 
     return my_id;
