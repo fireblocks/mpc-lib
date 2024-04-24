@@ -325,6 +325,12 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
             my_s = &it->second;
     }
 
+    if (my_s == NULL)
+    {
+        LOG_ERROR("inconsistent state detected in persistent storage");
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
     sig.clear();
     auto algebra = _ed25519.get();
     ed25519_algebra_ctx_t *ed25519 = (ed25519_algebra_ctx_t*)algebra->ctx;
