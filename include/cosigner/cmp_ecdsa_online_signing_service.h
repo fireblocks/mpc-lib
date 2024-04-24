@@ -1,8 +1,8 @@
 #pragma once
 
 #include "cosigner/cmp_ecdsa_signing_service.h"
+#include "cosigner/timing_map.h"
 
-#include <mutex>
 
 namespace fireblocks
 {
@@ -44,7 +44,7 @@ public:
         virtual void delete_signing_data(const std::string& txid) = 0;
     };
 
-    cmp_ecdsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& persistency) : cmp_ecdsa_signing_service(service, key_persistency), _signing_persistency(persistency) {}
+    cmp_ecdsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& persistency);
     
     void start_signing(const std::string& key_id, const std::string& txid, cosigner_sign_algorithm algorithm, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<cmp_mta_request>& mta_requests);
     uint64_t mta_response(const std::string& txid, const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, uint32_t version, cmp_mta_responses& response);
@@ -57,8 +57,7 @@ public:
 private:
     signing_persistency& _signing_persistency;
 
-    std::mutex _timing_map_lock;
-    std::map<std::string, uint64_t> _timing_map;
+    TimingMap _timing_map;
 };
 
 }

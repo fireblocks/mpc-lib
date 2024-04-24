@@ -49,6 +49,12 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
     }
 }
 
+cmp_ecdsa_online_signing_service::cmp_ecdsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& persistency):
+    cmp_ecdsa_signing_service(service, key_persistency),
+    _signing_persistency(persistency),
+    _timing_map(service) {}
+
+
 void cmp_ecdsa_online_signing_service::start_signing(const std::string& key_id, const std::string& txid, cosigner_sign_algorithm algorithm, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<cmp_mta_request>& mta_requests)
 {
     LOG_INFO("Entering txid = %s", txid.c_str());
@@ -95,10 +101,7 @@ void cmp_ecdsa_online_signing_service::start_signing(const std::string& key_id, 
     _service.start_signing(key_id, txid, data, metadata_json, players);
 
 #ifdef MOBILE
-    {
-        std::lock_guard<std::mutex> lg(_timing_map_lock);
-        _timing_map[txid] = _service.now_msec();
-    }
+    _timing_map.insert(txid);
 #endif
 
     LOG_INFO("Starting signing process keyid = %s, txid = %s", key_id.c_str(), txid.c_str());
@@ -156,10 +159,7 @@ uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid,
     }
 
 #ifndef MOBILE
-    {
-        std::lock_guard<std::mutex> lg(_timing_map_lock);
-        _timing_map[txid] = _service.now_msec();
-    }
+    _timing_map.insert(txid);
 #endif
 
     ack_mta_request(metadata.sig_data.size(), requests, metadata.signers_ids, metadata.ack);
@@ -467,18 +467,15 @@ uint64_t cmp_ecdsa_online_signing_service::get_cmp_signature(const std::string& 
 
     _signing_persistency.delete_signing_data(txid);
 
-    std::lock_guard<std::mutex> time_lock(_timing_map_lock);
-    auto timing_it = _timing_map.find(txid);
-    if (timing_it == _timing_map.end())
+    const std::optional<const uint64_t> diff = _timing_map.extract(txid);
+    if (!diff)
     {
         LOG_WARN("transaction %s is missing from timing map??", txid.c_str());
         LOG_INFO("Finished signing transaction %s", txid.c_str());
     }
     else
     {
-        uint64_t diff = (_service.now_msec() - timing_it->second);
-        _timing_map.erase(timing_it);
-        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", full_sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", full_sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), *diff);
     }
 
     return my_id;

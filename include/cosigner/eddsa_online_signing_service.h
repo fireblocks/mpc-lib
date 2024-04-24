@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cosigner/types.h"
+#include "cosigner/timing_map.h"
 
 #include <map>
 #include <memory>
@@ -51,7 +52,7 @@ public:
         virtual void delete_signing_data(const std::string& txid) = 0;
     };
 
-    eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& preprocessing_persistency) : _service(service), _key_persistency(key_persistency), _signing_persistency(preprocessing_persistency) {}
+    eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& preprocessing_persistency);
     void start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<commitment>& commitments);
     uint64_t store_commitments(const std::string& txid, const std::map<uint64_t, std::vector<commitment>>& commitments, uint32_t version, std::vector<elliptic_curve_point>& R);
     uint64_t broadcast_si(const std::string& txid, const std::map<uint64_t, std::vector<elliptic_curve_point>>& Rs, std::vector<elliptic_curve_scalar>& si);
@@ -67,8 +68,7 @@ private:
     const cmp_key_persistency& _key_persistency;
     signing_persistency& _signing_persistency;
 
-    std::mutex _timing_map_lock;
-    std::map<std::string, uint64_t> _timing_map;
+    TimingMap _timing_map;
 
     static const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> _ed25519;
 };

@@ -30,6 +30,13 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
 
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> eddsa_online_signing_service::_ed25519(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
 
+eddsa_online_signing_service::eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& preprocessing_persistency):
+    _service(service), 
+    _key_persistency(key_persistency),
+    _signing_persistency(preprocessing_persistency),
+    _timing_map(service) {}
+
+
 void eddsa_online_signing_service::start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<commitment>& commitments)
 {
     (void)players; // UNUSED
@@ -63,10 +70,7 @@ void eddsa_online_signing_service::start_signing(const std::string& key_id, cons
     _service.start_signing(key_id, txid, data, metadata_json, players);
 
 #ifdef MOBILE
-    {
-        std::lock_guard<std::mutex> lg(_timing_map_lock);
-        _timing_map[txid] = _service.now_msec();
-    }
+    _timing_map.insert(txid);
 #endif
 
     size_t blocks = data.blocks.size();
@@ -133,10 +137,7 @@ uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid
     verify_tenant_id(_service, _key_persistency, data.key_id);
     
 #ifndef MOBILE
-    {
-        std::lock_guard<std::mutex> lg(_timing_map_lock);
-        _timing_map[txid] = _service.now_msec();
-    }
+    _timing_map.insert(txid);
 #endif
 
 
@@ -381,18 +382,15 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
 
     _signing_persistency.delete_signing_data(txid);
 
-    std::lock_guard<std::mutex> time_lock(_timing_map_lock);
-    auto timing_it = _timing_map.find(txid);
-    if (timing_it == _timing_map.end())
+    const std::optional<const uint64_t> diff = _timing_map.extract(txid);
+    if (!diff)
     {
         LOG_WARN("transaction %s is missing from timing map??", txid.c_str());
-        LOG_INFO("Finished signing trnsaction %s", txid.c_str());
+        LOG_INFO("Finished signing transaction %s", txid.c_str());
     }
     else
     {
-        uint64_t diff = (_service.now_msec() - timing_it->second);
-        _timing_map.erase(timing_it);
-        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), *diff);
     }
 
     return my_id;

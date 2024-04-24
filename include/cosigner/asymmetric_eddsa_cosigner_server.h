@@ -3,6 +3,7 @@
 #include "asymmetric_eddsa_cosigner.h"
 #include "crypto/commitments/commitments.h"
 #include "crypto/ed25519_algebra/ed25519_algebra.h"
+#include "cosigner/timing_map.h"
 
 #include <array>
 #include <map>
@@ -84,8 +85,7 @@ private:
     void commit_to_Rs(const std::string& txid, uint64_t id, const std::vector<elliptic_curve_point>& Rs, eddsa_commitment& commitment);
     signing_persistency& _signing_persistency;
 
-    std::mutex _timing_map_lock;
-    std::map<std::string, uint64_t> _timing_map;
+    TimingMap _timing_map;
 };
 
 }

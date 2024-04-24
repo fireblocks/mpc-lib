@@ -28,7 +28,7 @@ private:
 
 
 asymmetric_eddsa_cosigner_server::asymmetric_eddsa_cosigner_server(platform_service& cosigner_service, const cmp_key_persistency& key_persistency, signing_persistency& signing_persistency) :
-    asymmetric_eddsa_cosigner(cosigner_service, key_persistency), _signing_persistency(signing_persistency) {}
+    asymmetric_eddsa_cosigner(cosigner_service, key_persistency), _signing_persistency(signing_persistency), _timing_map(cosigner_service) {}
 
 void asymmetric_eddsa_cosigner_server::store_presigning_data(const std::string& key_id, const std::string& request_id, uint32_t start_index, uint32_t count, uint32_t total_count, const std::set<uint64_t>& players_ids,
     uint64_t sender, const std::vector<eddsa_commitment>& R_commitments)
@@ -129,10 +129,7 @@ void asymmetric_eddsa_cosigner_server::eddsa_sign_offline(const std::string& key
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
-    {
-        std::lock_guard<std::mutex> lg(_timing_map_lock);
-        _timing_map[txid] = _service.now_msec();
-    }
+    _timing_map.insert(txid);
 
     uint64_t my_id = _service.get_id_from_keyid(key_id);
 
@@ -440,18 +437,15 @@ uint64_t asymmetric_eddsa_cosigner_server::broadcast_si(const std::string& txid,
     {
         _signing_persistency.delete_signing_data(txid);
 
-        std::lock_guard<std::mutex> time_lock(_timing_map_lock);
-        auto timing_it = _timing_map.find(txid);
-        if (timing_it == _timing_map.end())
+        const std::optional<const uint64_t> diff = _timing_map.extract(txid);
+        if (!diff)
         {
             LOG_WARN("transaction %s is missing from timing map??", txid.c_str());
-            LOG_INFO("Finished signing trnsaction %s", txid.c_str());
+            LOG_INFO("Finished signing transaction %s", txid.c_str());
         }
         else
         {
-            uint64_t diff = (_service.now_msec() - timing_it->second);
-            _timing_map.erase(timing_it);
-            LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", data.signers_ids.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+            LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", data.signers_ids.size(), txid.c_str(), _service.get_current_tenantid().c_str(), *diff);
         }
     }
     else
@@ -541,18 +535,15 @@ uint64_t asymmetric_eddsa_cosigner_server::get_eddsa_signature(const std::string
 
     _signing_persistency.delete_signing_data(txid);
 
-    std::lock_guard<std::mutex> time_lock(_timing_map_lock);
-    auto timing_it = _timing_map.find(txid);
-    if (timing_it == _timing_map.end())
+    const std::optional<const uint64_t> diff = _timing_map.extract(txid);
+    if (!diff)
     {
         LOG_WARN("transaction %s is missing from timing map??", txid.c_str());
-        LOG_INFO("Finished signing trnsaction %s", txid.c_str());
+        LOG_INFO("Finished signing transaction %s", txid.c_str());
     }
     else
     {
-        uint64_t diff = (_service.now_msec() - timing_it->second);
-        _timing_map.erase(timing_it);
-        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sigs.size(), txid.c_str(), _service.get_current_tenantid().c_str(), diff);
+        LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sigs.size(), txid.c_str(), _service.get_current_tenantid().c_str(), *diff);
     }
 
     return my_id;
