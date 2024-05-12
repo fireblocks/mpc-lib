@@ -1,11 +1,11 @@
 #include "crypto/GFp_curve_algebra/GFp_curve_algebra.h"
+#include "port.h"
 
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/objects.h>
 #include <openssl/rand.h>
 
-#include <byteswap.h>
 #include <string.h>
 
 #include <tests/catch.hpp>

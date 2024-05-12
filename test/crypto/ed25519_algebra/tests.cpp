@@ -1,10 +1,10 @@
 #include "crypto/ed25519_algebra/ed25519_algebra.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
+#include "port.h"
 
 #include <openssl/rand.h>
 #include <openssl/bn.h>
 
-#include <byteswap.h>
 #include <string.h>
 
 #include <tests/catch.hpp>
