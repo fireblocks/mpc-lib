@@ -4,7 +4,7 @@
 #include <openssl/rand.h>
 #include <openssl/bn.h>
 
-#include <byteswap.h>
+#include "port.h"
 #include <string.h>
 
 #include <tests/catch.hpp>
