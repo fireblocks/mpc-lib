@@ -5,7 +5,7 @@
 #include "logging/logging_t.h"
 
 #include <openssl/sha.h>
-
+#include <openssl/crypto.h>
 #include <algorithm>
 
 #include <inttypes.h>
@@ -114,7 +114,7 @@ void cmp_setup_service::generate_setup_commitments(const std::string& key_id, co
     }
 
     generate_setup_commitments(key_id, tenant_id, algorithm, algebra, players_ids, t, ttl, key, algebra->infinity_point(algebra), setup_commitment);
-    memset_s(key, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(key, sizeof(elliptic_curve256_scalar_t));
 }
 
 void cmp_setup_service::store_setup_commitments(const std::string& key_id, const std::map<uint64_t, commitment>& commitments, setup_decommitment& decommitment)
@@ -358,7 +358,7 @@ void cmp_setup_service::add_user_request(const std::string& key_id, cosigner_sig
         throw_cosigner_exception(algebra->rand(algebra, &share));
         throw_cosigner_exception(algebra->sub_scalars(algebra, &last_share.data, last_share.data, sizeof(elliptic_curve256_scalar_t), share, sizeof(elliptic_curve256_scalar_t)));
         data.encrypted_shares[id] = _service.encrypt_for_player(id, byte_vector_t(share, &share[sizeof(elliptic_curve256_scalar_t)]));
-        memset_s(share, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+        OPENSSL_cleanse(share, sizeof(elliptic_curve256_scalar_t));
     }
     
     uint64_t id = players_ids[n - 1];
@@ -448,7 +448,7 @@ void cmp_setup_service::add_user(const std::string& tenant_id, const std::string
         throw_cosigner_exception(algebra->add_scalars(algebra, &key, key, sizeof(elliptic_curve256_scalar_t), (const uint8_t*)share.data(), share.size()));
     }
     generate_setup_commitments(key_id, tenant_id, algorithm, algebra, players_ids, t, ttl, key, &pubkey, setup_commitment);
-    memset_s(key, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(key, sizeof(elliptic_curve256_scalar_t));
 }
 
 void cmp_setup_service::generate_setup_commitments(const std::string& key_id, const std::string& tenant_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_algebra_ctx_t* algebra, const std::vector<uint64_t>& players_ids, 

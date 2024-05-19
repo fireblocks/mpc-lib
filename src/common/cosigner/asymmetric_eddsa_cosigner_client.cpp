@@ -7,7 +7,7 @@
 #include "utils.h"
 
 #include <openssl/sha.h>
-
+#include <openssl/crypto.h>
 #include <inttypes.h>
 
 namespace fireblocks
@@ -89,7 +89,7 @@ void asymmetric_eddsa_cosigner_client::start_signature_preprocessing(const std::
         throw_cosigner_exception(ed25519_algebra_generator_mul(ed25519, &R, &k));
         R_commitments.push_back(commit_to_r(key_id, index, my_id, R));
         _preprocessing_persistency.store_preprocessed_data(key_id, index, k);
-        memset_s(k, sizeof(ed25519_scalar_t), 0, sizeof(ed25519_scalar_t));
+        OPENSSL_cleanse(k, sizeof(ed25519_scalar_t));
     }
 }
 

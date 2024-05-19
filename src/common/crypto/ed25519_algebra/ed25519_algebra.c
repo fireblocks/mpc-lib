@@ -8,10 +8,6 @@
 #include <openssl/bn.h>
 #include <openssl/sha.h>
 
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
-
 const uint8_t ED25519_FIELD[] = {
     0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x14, 0xde, 0xf9, 0xde, 0xa2, 0xf7, 0x9c, 0xd6, 0x58, 0x12, 0x63, 0x1a, 0x5c, 0xf5, 0xd3, 0xed};
@@ -59,7 +55,7 @@ static inline void bswap_256(const ed25519_scalar_t in, ed25519_scalar_t out)
 
 static inline int ed25519_to_scalar(const ed25519_scalar_t in, ed25519_scalar_t out)
 {
-    memset_s(out, sizeof(ed25519_scalar_t), 0, sizeof(ed25519_scalar_t));
+    OPENSSL_cleanse(out, sizeof(ed25519_scalar_t));
     if (in[0] & 0x80)
         return 0;
 
@@ -154,13 +150,13 @@ elliptic_curve_algebra_status ed25519_algebra_generator_mul_data(const ed25519_a
     if (!ctx || !data || !point || !data_len)
         return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
 
-    memset_s(*point, sizeof(ed25519_point_t), 0, sizeof(ed25519_point_t));
+    OPENSSL_cleanse(*point, sizeof(ed25519_point_t));
     ret = to_ed25519_scalar(ctx, &exp, data, data_len);
     
     if (ret == ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
     {
         ed25519_algebra_generator_mul_internal(point, &exp);
-        memset_s(exp, sizeof(ed25519_scalar_t), 0, sizeof(ed25519_scalar_t));
+        OPENSSL_cleanse(exp, sizeof(ed25519_scalar_t));
     }
     return ret;
 }
@@ -238,7 +234,7 @@ elliptic_curve_algebra_status ed25519_algebra_generator_mul(const ed25519_algebr
     if (!ctx || !res || !exp)
         return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
     
-    memset_s(*res, sizeof(ed25519_point_t), 0, sizeof(ed25519_point_t));
+    OPENSSL_cleanse(*res, sizeof(ed25519_point_t));
     
     if (!ed25519_to_scalar(*exp, local_exp))
         return ELLIPTIC_CURVE_ALGEBRA_INVALID_SCALAR;
@@ -607,8 +603,8 @@ elliptic_curve_algebra_status ed25519_algebra_sign(const ed25519_algebra_ctx_t *
     ed25519_algebra_mul_add(ctx, &s, &hram, &priv, &k);
     memcpy(signature, R, 32);
     memcpy(signature + 32, s, 32);
-    memset_s(k, sizeof(ed25519_le_scalar_t), 0, sizeof(ed25519_le_scalar_t));
-    memset_s(priv, sizeof(ed25519_le_scalar_t), 0, sizeof(ed25519_le_scalar_t));
+    OPENSSL_cleanse(k, sizeof(ed25519_le_scalar_t));
+    OPENSSL_cleanse(priv, sizeof(ed25519_le_scalar_t));
     return ELLIPTIC_CURVE_ALGEBRA_SUCCESS;
 }
 
@@ -874,9 +870,9 @@ static elliptic_curve_algebra_status reduce(const struct elliptic_curve256_algeb
         ret = ELLIPTIC_CURVE_ALGEBRA_SUCCESS;
     }
     else
-        memset_s(*res, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+        OPENSSL_cleanse(*res, sizeof(elliptic_curve256_scalar_t));
 
-    memset_s(tmp, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(tmp, sizeof(elliptic_curve256_scalar_t));
     return ret;
 }
 

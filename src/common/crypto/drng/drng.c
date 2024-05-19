@@ -2,10 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/sha.h>
-
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
+#include <openssl/crypto.h>
 
 struct drng
 {
@@ -36,7 +33,7 @@ void drng_free(drng_t *rng)
 {
     if (rng)
     {
-        memset_s(rng, sizeof(drng_t), 0, sizeof(drng_t));
+        OPENSSL_cleanse(rng, sizeof(drng_t));
         free(rng);
     }
 }

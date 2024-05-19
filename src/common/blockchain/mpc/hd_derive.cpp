@@ -9,10 +9,6 @@
 
 #include <string.h>
 
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
-
 const uint32_t BIP44 = 0x0000002c;
 
 typedef unsigned char hmac_sha_result[64];
@@ -102,7 +98,7 @@ static hd_derive_status derive_next_key_level_(const elliptic_curve256_algebra_c
         if (ELLIPTIC_CURVE_ALGEBRA_SUCCESS != ctx->add_scalars(ctx, &tmp_priv, privkey, PRIVATE_KEY_SIZE, hash, 32))
             return HD_DERIVE_ERROR_ADDING_TWEAK_TO_PRIV;
         memcpy(derived_privkey, tmp_priv, PRIVATE_KEY_SIZE);
-        memset_s(tmp_priv, PRIVATE_KEY_SIZE, 0, PRIVATE_KEY_SIZE);
+        OPENSSL_cleanse(tmp_priv, PRIVATE_KEY_SIZE);
     }
     return HD_DERIVE_SUCCESS;
 }

@@ -7,6 +7,7 @@
 #include "logging/logging_t.h"
 
 #include <openssl/sha.h>
+#include <openssl/crypto.h>
 
 #include <inttypes.h>
 
@@ -21,7 +22,7 @@ class ed25519_scalar_cleaner
 {
 public:
     ed25519_scalar_cleaner(ed25519_scalar_t& secret) : _secret(secret) {}
-    ~ed25519_scalar_cleaner() {memset_s(_secret, sizeof(_secret), 0, sizeof(ed25519_scalar_t));}
+    ~ed25519_scalar_cleaner() {OPENSSL_cleanse(_secret, sizeof(_secret));}
 private:
     ed25519_scalar_t& _secret;
 };
@@ -191,7 +192,7 @@ void asymmetric_eddsa_cosigner_server::eddsa_sign_offline(const std::string& key
     {
         commit_to_Rs(txid, my_id, Rs.Rs, Rs.R_commitment);
     }
-    memset_s(k, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(k, sizeof(elliptic_curve256_scalar_t));
     std::vector<uint32_t> flags(blocks, 0);
     _service.fill_signing_info_from_metadata(metadata_json, flags);
     for (size_t i = 0; i < blocks; i++)
