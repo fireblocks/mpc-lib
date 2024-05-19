@@ -6,10 +6,6 @@
 
 #include <openssl/err.h>
 
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
-
 #define FACTORIZANTION_ZKP_K 10
 #define COPRIME_ZKP_K 16
 #define PAILLIER_BLUM_STATISTICAL_SECURITY 80
@@ -678,7 +674,7 @@ long paillier_generate_paillier_blum_zkp(const paillier_private_key_t *priv, con
 
     if (proof_len < needed_proof_len)
         return PAILLIER_ERROR_BUFFER_TOO_SHORT;
-    memset_s(serialized_proof, proof_len, 0, proof_len);
+    OPENSSL_cleanse(serialized_proof, proof_len);
     
     n_len = BN_num_bytes(priv->pub.n);
     if ((ctx = BN_CTX_new()) == NULL)

@@ -5,10 +5,6 @@
 
 #include <openssl/bn.h>
 
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
-
 struct verifiable_secret_sharing 
 {
     const elliptic_curve256_algebra_ctx_t *algebra;
@@ -88,7 +84,7 @@ static verifiable_secret_sharing_status create_shares(const elliptic_curve256_al
             goto cleanup;
         }
     }
-    memset_s(coefficient, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(coefficient, sizeof(elliptic_curve256_scalar_t));
     
     tmp = BN_CTX_get(ctx);
     if (!tmp)
@@ -605,7 +601,7 @@ void verifiable_secret_sharing_free_shares(verifiable_secret_sharing_t *shares)
     if (shares)
     {
         free(shares->ids);
-        memset_s(shares->shares, shares->num_shares * sizeof(shamir_secret_sharing_scalar_t), 0, shares->num_shares * sizeof(shamir_secret_sharing_scalar_t));
+        OPENSSL_cleanse(shares->shares, shares->num_shares * sizeof(shamir_secret_sharing_scalar_t));
         free(shares->shares);
         free(shares->proofs);
         free(shares->coefficient_proofs);

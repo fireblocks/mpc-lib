@@ -2,10 +2,6 @@
 
 #include <string.h>
 
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
-
 size_t SHA3_absorb(uint64_t A[5][5], const unsigned char *inp, size_t len,
                    size_t r);
 void SHA3_squeeze(uint64_t A[5][5], unsigned char *out, size_t len, size_t r);

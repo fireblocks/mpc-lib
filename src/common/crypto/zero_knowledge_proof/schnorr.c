@@ -1,11 +1,9 @@
 #include "crypto/zero_knowledge_proof/schnorr.h"
 #include <string.h>
+#include <openssl/crypto.h>
 #include <openssl/bn.h>
 #include <openssl/sha.h>
 
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
 
 static zero_knowledge_proof_status from_elliptic_curve_algebra_status(elliptic_curve_algebra_status status)
 {
@@ -57,7 +55,7 @@ static zero_knowledge_proof_status schnorr_zkp_generate_impl(const elliptic_curv
         return from_elliptic_curve_algebra_status(status);
 
     status = algebra->sub_scalars(algebra, &proof->s, k, sizeof(k), c, sizeof(c));
-    memset_s(k, sizeof(k), 0, sizeof(k));
+    OPENSSL_cleanse(k, sizeof(k));
     if (status != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         return from_elliptic_curve_algebra_status(status);
 

@@ -5,16 +5,13 @@
 #include "crypto/commitments/commitments.h"
 #include "cosigner/sign_algorithm.h"
 #include "blockchain/mpc/hd_derive.h"
+#include <openssl/crypto.h>
 
 #include <string.h>
 
 #include <set>
 #include <string>
 #include <vector>
-
-#ifndef ENCLAVE
-#define memset_s(dest, destsz, ch, count) memset(dest, ch, count)
-#endif
 
 namespace fireblocks
 {
@@ -28,19 +25,19 @@ typedef std::vector<uint8_t> byte_vector_t;
 struct elliptic_curve_point
 {
     elliptic_curve256_point_t data;
-    elliptic_curve_point() {memset_s(&data, sizeof(elliptic_curve256_point_t), 0, sizeof(elliptic_curve256_point_t));}
+    elliptic_curve_point() {OPENSSL_cleanse(&data, sizeof(elliptic_curve256_point_t));}
 };
 
 struct elliptic_curve_scalar
 {
     elliptic_curve256_scalar_t data;
-    elliptic_curve_scalar() {memset_s(&data, sizeof(elliptic_curve_scalar), 0, sizeof(elliptic_curve_scalar));}
-    ~elliptic_curve_scalar() {memset_s(&data, sizeof(elliptic_curve_scalar), 0, sizeof(elliptic_curve_scalar));}
+    elliptic_curve_scalar() {OPENSSL_cleanse(&data, sizeof(elliptic_curve_scalar));}
+    ~elliptic_curve_scalar() {OPENSSL_cleanse(&data, sizeof(elliptic_curve_scalar));}
 };
 
 struct commitment
 {
-    commitment() {memset_s(&data, sizeof(commitments_commitment_t), 0, sizeof(commitments_commitment_t));}
+    commitment() {OPENSSL_cleanse(&data, sizeof(commitments_commitment_t));}
     commitment(const commitments_commitment_t* hash) {memcpy(&data, hash, sizeof(commitments_commitment_t));}
     commitments_commitment_t data;
 };

@@ -2,7 +2,7 @@
 
 #include "cosigner/types.h"
 #include "cosigner/timing_map.h"
-
+#include <openssl/crypto.h>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -25,7 +25,7 @@ struct eddsa_signature_data
     std::vector<uint32_t> path;
     byte_vector_t message;
     uint32_t flags;
-    ~eddsa_signature_data() {memset_s(k.data, sizeof(k.data), 0, sizeof(elliptic_curve_scalar));}
+    ~eddsa_signature_data() {OPENSSL_cleanse(k.data, sizeof(k.data));}
 };
 
 struct eddsa_signing_metadata

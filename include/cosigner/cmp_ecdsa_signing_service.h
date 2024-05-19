@@ -4,6 +4,7 @@
 #include "cosigner/cosigner_exception.h"
 
 #include "crypto/paillier/paillier.h"
+#include <openssl/crypto.h>
 
 #include <map>
 #include <memory>
@@ -83,7 +84,7 @@ struct ecdsa_signing_data
     byte_vector_t mta_request;
     std::map<uint64_t, byte_vector_t> G_proofs;
     std::map<uint64_t, ecdsa_signing_public_data> public_data;
-    ~ecdsa_signing_data() {memset_s(k.data, sizeof(ecdsa_signing_data), 0, sizeof(elliptic_curve256_scalar_t) * 6);}
+    ~ecdsa_signing_data() {OPENSSL_cleanse(k.data, sizeof(ecdsa_signing_data));}
 };
 
 // this class holds the common functionality for cmp_ecdsa_online_signing_service and cmp_ecdsa_offline_signing_service

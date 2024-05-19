@@ -4,6 +4,7 @@
 #include "crypto/commitments/commitments.h"
 #include "crypto/ed25519_algebra/ed25519_algebra.h"
 #include "cosigner/timing_map.h"
+#include <openssl/crypto.h>
 
 #include <array>
 #include <map>
@@ -26,7 +27,7 @@ struct asymmetric_eddsa_signature_data
     std::vector<uint32_t> path;
     byte_vector_t message;
     uint32_t flags;
-    ~asymmetric_eddsa_signature_data() {memset_s(k.data, sizeof(asymmetric_eddsa_signature_data), 0, sizeof(elliptic_curve_scalar));}
+    ~asymmetric_eddsa_signature_data() {OPENSSL_cleanse(k.data, sizeof(asymmetric_eddsa_signature_data));}
 };
 
 struct asymmetric_eddsa_signing_metadata

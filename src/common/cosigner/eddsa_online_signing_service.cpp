@@ -7,6 +7,7 @@
 #include "logging/logging_t.h"
 
 #include <inttypes.h>
+#include <openssl/crypto.h>
 
 namespace fireblocks
 {
@@ -119,7 +120,7 @@ void eddsa_online_signing_service::start_signing(const std::string& key_id, cons
         sigdata.flags = NONE;
         info.sig_data.push_back(sigdata);
     }
-    memset_s(k, sizeof(elliptic_curve256_scalar_t), 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(k, sizeof(elliptic_curve256_scalar_t));
     std::vector<uint32_t> flags(blocks, 0);
     _service.fill_signing_info_from_metadata(metadata_json, flags);
     for (size_t i = 0; i < blocks; i++)
