@@ -1,8 +1,8 @@
 App_Name := test
 
-App_C_Flags := -g -Wall -Wextra -I../../../include
+App_C_Flags := -g -Wall -Wextra -I../../../include $(CUSTOM_INCLUDEDIR)
 App_Cpp_Flags := $(App_C_Flags) -std=c++17
-App_Link_Flags := -Wl,-Bstatic -lcrypto -Wl,-Bdynamic -pthread -ldl
+App_Link_Flags := $(CUSTOM_LIBDIR) -lcrypto -pthread -ldl
 
 all: $(App_Name)
 
