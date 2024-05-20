@@ -142,7 +142,7 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     for (auto i = players.begin(); i != players.end(); ++i)
     {
         auto info = std::make_unique<eddsa_siging_info>(i->first, i->second, keccek);
-        services.emplace(i->first, move(info));
+        services.emplace(i->first, std::move(info));
         players_ids.insert(i->first);
         players_str.insert(std::to_string(i->first));
     }

@@ -133,7 +133,7 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     for (auto i = players.begin(); i != players.end(); ++i)
     {
         auto info = std::make_unique<siging_info>(i->first, i->second, positive_r);
-        services.emplace(i->first, move(info));
+        services.emplace(i->first, std::move(info));
         players_ids.insert(i->first);
         players_str.insert(std::to_string(i->first));
     }

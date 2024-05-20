@@ -494,7 +494,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         for (auto i = players.begin(); i != players.end(); ++i)
         {
             auto info = std::make_unique<offline_siging_info>(i->first, i->second);
-            services.emplace(i->first, move(info));
+            services.emplace(i->first, std::move(info));
         }
     
         auto before = Clock::now();
@@ -543,7 +543,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         for (auto i = players.begin(); i != players.end(); ++i)
         {
             auto info = std::make_unique<key_refresh_info>(i->first, i->second, services.at(i->first)->persistency);
-            refresh_info.emplace(i->first, move(info));
+            refresh_info.emplace(i->first, std::move(info));
         }
         key_refresh(refresh_info, keyid, pubkey);
         ecdsa_sign(services, ECDSA_SECP256K1, keyid, 9, 1, pubkey, chaincode, derivation_paths);
@@ -562,7 +562,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         for (auto i = players.begin(); i != players.end(); ++i)
         {
             auto info = std::make_unique<offline_siging_info>(i->first, i->second);
-            services.emplace(i->first, move(info));
+            services.emplace(i->first, std::move(info));
         }
     
         const size_t THREAD_COUNT = 8;
@@ -607,7 +607,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         for (auto i = players.begin(); i != players.end(); ++i)
         {
             auto info = std::make_unique<offline_siging_info>(i->first, i->second);
-            services.emplace(i->first, move(info));
+            services.emplace(i->first, std::move(info));
         }
     
         ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
@@ -625,7 +625,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         for (auto i = new_players.begin(); i != new_players.end(); ++i)
         {
             auto info = std::make_unique<offline_siging_info>(i->first, i->second);
-            new_services.emplace(i->first, move(info));
+            new_services.emplace(i->first, std::move(info));
         }
         ecdsa_preprocess(new_services, new_keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
         ecdsa_sign(new_services, ECDSA_SECP256R1, new_keyid, 0, 1, pubkey, chaincode, {path});
@@ -644,7 +644,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         for (auto i = players.begin(); i != players.end(); ++i)
         {
             auto info = std::make_unique<offline_siging_info>(i->first, i->second);
-            services.emplace(i->first, move(info));
+            services.emplace(i->first, std::move(info));
         }
     
         ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
