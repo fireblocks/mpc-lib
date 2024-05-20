@@ -23,7 +23,7 @@ Cpp_Files := cosigner/cosigner_exception.cpp cosigner/cmp_setup_service.cpp cosi
 
 Cpp_Objects := $(Cpp_Files:.cpp=.o)
 
-Include_Paths := -I. -I../../include
+Include_Paths := -I. -I../../include -I$(CUSTOM_INCLUDEDIR)
 
 C_Flags := $(COMMON_CFLAGS) -fstack-protector-strong
 C_Flags += $(Include_Paths)
@@ -31,7 +31,7 @@ C_Flags += -Wno-unknown-pragmas
 
 Cpp_Flags := $(C_Flags) -std=c++17 -Wno-overloaded-virtual
 
-Link_Flags := $(COMMON_CFLAGS) -shared -Wl,--version-script=lib.lds -Wl,--no-undefined -Wl,-Bstatic -lcrypto -Wl,-Bdynamic -lpthread -ldl
+Link_Flags := $(COMMON_CFLAGS) -shared -L$(CUSTOM_LIBDIR) -lcrypto -lpthread -ldl
 
 Lib_Name := libcosigner.so
 
