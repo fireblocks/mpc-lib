@@ -64,14 +64,20 @@ private:
     bool _use_keccak;
 };
 
+struct ed25519_preprocessed_data
+{
+    ed25519_scalar_t s;
+};
+
 class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessing_persistency
 {
     void create_preprocessed_data(const std::string& key_id, uint64_t size) override
+
     {
         std::lock_guard<std::mutex> lock(_mutex);
         if (_preprocessed_data.find(key_id) != _preprocessed_data.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        _preprocessed_data.emplace(key_id, std::move(std::vector<ed25519_scalar_t>(size)));
+        _preprocessed_data.emplace(key_id, std::move(std::vector<ed25519_preprocessed_data>(size)));
     }
 
     void store_preprocessed_data(const std::string& key_id, uint64_t index, const ed25519_scalar_t& k) override
@@ -82,7 +88,7 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
         if (index >= it->second.size())
             throw cosigner_exception(cosigner_exception::INVALID_PRESIGNING_INDEX);
-        memcpy(it->second[index], k, sizeof(ed25519_scalar_t));
+        memcpy(it->second[index].s, k, sizeof(ed25519_scalar_t));
     }
 
     void load_preprocessed_data(const std::string& key_id, uint64_t index, ed25519_scalar_t& k) override
@@ -92,10 +98,10 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
         auto it = _preprocessed_data.find(key_id);
         if (it == _preprocessed_data.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        if (index >= it->second.size() || memcmp(it->second[index], ZERO, sizeof(ed25519_scalar_t)) == 0)
+        if (index >= it->second.size() || memcmp(it->second[index].s, ZERO, sizeof(ed25519_scalar_t)) == 0)
             throw cosigner_exception(cosigner_exception::INVALID_PRESIGNING_INDEX);
-        memcpy(k, it->second[index], sizeof(ed25519_scalar_t));
-        memset(it->second[index], 0, sizeof(ed25519_scalar_t));
+        memcpy(k, it->second[index].s, sizeof(ed25519_scalar_t));
+        memset(it->second[index].s, 0, sizeof(ed25519_scalar_t));
     }
 
     void delete_preprocessed_data(const std::string& key_id) override
@@ -105,7 +111,7 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
     }
 
     mutable std::mutex _mutex;
-    std::map<std::string, std::vector<ed25519_scalar_t>> _preprocessed_data;
+    std::map<std::string, std::vector<ed25519_preprocessed_data>> _preprocessed_data;
 };
 
 class server_persistency : public asymmetric_eddsa_cosigner_server::signing_persistency
