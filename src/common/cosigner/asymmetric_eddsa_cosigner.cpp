@@ -52,7 +52,7 @@ void asymmetric_eddsa_cosigner::derivation_key_delta(const elliptic_curve256_poi
     else
     {
         memcpy(delta, ZERO, sizeof(elliptic_curve256_scalar_t));
-        memcpy(derived_pubkey, public_key, sizeof(elliptic_curve256_point_t));
+        memcpy(derived_pubkey, public_key, sizeof(ed25519_point_t));
     }
 }
 
