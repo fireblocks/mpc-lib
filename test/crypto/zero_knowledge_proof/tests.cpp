@@ -316,7 +316,7 @@ TEST_CASE("ring_pedersen", "verify") {
         std::unique_ptr<uint8_t[]> proof(new uint8_t[proof_len]);
         res = ring_pedersen_parameters_zkp_generate(priv, (const unsigned char*)"hello world", sizeof("hello world") - 1, proof.get(), proof_len, &proof_len);
         REQUIRE(res == ZKP_SUCCESS);
-        res = ring_pedersen_parameters_zkp_verify(pub, (const unsigned char*)"gello world", sizeof("hello world") - 1, proof.get(), proof_len);
+        res = ring_pedersen_parameters_zkp_verify(pub, (const unsigned char*)"hello world", sizeof("hello world") - 1, proof.get(), proof_len);
         REQUIRE(res == ZKP_VERIFICATION_FAILED);
     }
 
