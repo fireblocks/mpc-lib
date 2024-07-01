@@ -571,7 +571,7 @@ TEST_CASE( "zkpok", "paillier") {
         
         res = paillier_generate_factorization_zkpok(priv, (const unsigned char*)"hello world", sizeof("hello world") - 1, x, y, 256, NULL);
         REQUIRE(res == PAILLIER_SUCCESS);
-        res = paillier_verify_factorization_zkpok(pub, (const unsigned char*)"gello world", sizeof("hello world") - 1, x, y, 256);
+        res = paillier_verify_factorization_zkpok(pub, (const unsigned char*)"hello world", sizeof("hello world") - 1, x, y, 256);
         REQUIRE(res == PAILLIER_ERROR_INVALID_PROOF);
     }
     
