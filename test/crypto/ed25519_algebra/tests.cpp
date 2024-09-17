@@ -79,7 +79,7 @@ TEST_CASE( "verify_mul_sum", "zkp") {
         uint8_t val = 2*3 + 4*5 + 6*7;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), &proof);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         ed25519_point_t proofs[3];
         ed25519_scalar_t coeff[3] = {0};
         val = 2;
@@ -107,7 +107,7 @@ TEST_CASE( "verify_mul_sum", "zkp") {
         uint8_t val = 2*3 + 4*5 + 6*7;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), &proof);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         ed25519_point_t proofs[3];
         ed25519_scalar_t coeff[3] = {0};
         val = 2;
@@ -183,7 +183,7 @@ TEST_CASE( "invalid param", "zkp") {
         uint32_t val = 7;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), &proof);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         ed25519_point_t proofs[2];
         ed25519_scalar_t coeff[2] = {0};
         coeff[0][31] = 3;
@@ -194,7 +194,7 @@ TEST_CASE( "invalid param", "zkp") {
         val = 2;
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), proofs + 1);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         uint8_t res = 0;
         status = ed25519_algebra_verify_linear_combination(NULL, &proof, proofs, coeff, 2, &res);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
@@ -215,10 +215,10 @@ TEST_CASE( "invalid param", "zkp") {
         ed25519_point_t pa, pb;
         uint32_t a = 7, b = 5;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&b, sizeof(b), &pb);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         status = ed25519_algebra_add_points(NULL, &pa, &pa, &pb);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
         status = ed25519_algebra_add_points(ctx, NULL, &pa, &pb);
@@ -232,7 +232,7 @@ TEST_CASE( "invalid param", "zkp") {
     SECTION("add scalars") {
         REQUIRE(ctx);
         uint32_t a = 7, b = 5;
-        
+
         ed25519_scalar_t res;
         elliptic_curve_algebra_status status = ed25519_algebra_add_scalars(NULL, &res, (uint8_t*)&a, sizeof(a), (uint8_t*)&b, sizeof(b));
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
@@ -259,10 +259,10 @@ TEST_CASE( "ed25519_algebra_add_points", "zkp") {
         ed25519_point_t pa, pb, sum, res;
         uint32_t a = 7, b = 5;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&b, sizeof(b), &pb);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         status = ed25519_algebra_add_points(ctx, &res, &pa, &pb);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
 
@@ -278,10 +278,10 @@ TEST_CASE( "ed25519_algebra_add_points", "zkp") {
         ed25519_point_t pa, pb, sum, res;
         uint32_t a = 7, b = 0;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&b, sizeof(b), &pb);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         status = ed25519_algebra_add_points(ctx, &res, &pa, &pb);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         REQUIRE(memcmp(pa, res, sizeof(ed25519_point_t)) == 0);
@@ -298,8 +298,8 @@ TEST_CASE( "ed25519_algebra_add_points", "zkp") {
         ed25519_point_t pa, pb = {0}, res;
         uint32_t a = 7;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
-        
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
         status = ed25519_algebra_add_points(ctx, &res, &pa, &pb); //invalid encoding
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_INVALID_POINT);
         pb[0] = 1;
@@ -321,10 +321,10 @@ TEST_CASE( "ed25519_algebra_point_mul", "zkp") {
         ed25519_scalar_t exp = {0};
         exp[sizeof(ed25519_scalar_t) - 1] = 5;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         status = ed25519_algebra_point_mul(ctx, &res, &pa, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         uint8_t val = 35;
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), &sum);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
@@ -338,11 +338,11 @@ TEST_CASE( "ed25519_algebra_point_mul", "zkp") {
         uint8_t a = 7;
         ed25519_scalar_t exp = {0};
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
-        
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
         status = ed25519_algebra_point_mul(ctx, &res, &pa, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         uint32_t val = 0;
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), &sum);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
@@ -357,11 +357,11 @@ TEST_CASE( "ed25519_algebra_point_mul", "zkp") {
         ed25519_scalar_t exp = {0};
         exp[sizeof(ed25519_scalar_t) - 1] = 1;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
-        
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
         status = ed25519_algebra_point_mul(ctx, &res, &pa, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-        
+
         REQUIRE(memcmp(pa, res, sizeof(pa)) == 0);
     }
 
@@ -371,7 +371,7 @@ TEST_CASE( "ed25519_algebra_point_mul", "zkp") {
         ed25519_point_t res;
         ed25519_scalar_t exp = {0};
         exp[sizeof(ed25519_scalar_t) - 1] = 1;
-        
+
         elliptic_curve_algebra_status status = ed25519_algebra_point_mul(ctx, &res, &p, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_INVALID_POINT);
     }
@@ -383,8 +383,8 @@ TEST_CASE( "ed25519_algebra_point_mul", "zkp") {
         ed25519_scalar_t exp = {0};
         exp[0] = 0x81;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
-        
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
         status = ed25519_algebra_point_mul(ctx, &res, &pa, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_INVALID_SCALAR);
     }
@@ -404,8 +404,8 @@ TEST_CASE( "ed25519_algebra_generator_mul", "zkp") {
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul(ctx, &res, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
-        
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
         REQUIRE(memcmp(pa, res, sizeof(pa)) == 0);
     }
 
@@ -419,8 +419,8 @@ TEST_CASE( "ed25519_algebra_generator_mul", "zkp") {
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul(ctx, &res, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&a, sizeof(a), &pa);
-        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);    
-        
+        REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
         REQUIRE(memcmp(pa, res, sizeof(pa)) == 0);
     }
 
@@ -433,7 +433,7 @@ TEST_CASE( "ed25519_algebra_generator_mul", "zkp") {
         exp[sizeof(ed25519_scalar_t) - 3] = 1;
         elliptic_curve_algebra_status status = ed25519_algebra_generator_mul(ctx, &res, &exp);
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-                
+
         REQUIRE(memcmp(expected, res, sizeof(expected)) == 0);
     }
 
@@ -581,14 +581,14 @@ TEST_CASE( "sign", "ed25519") {
 
 TEST_CASE( "reduce" ) {
     elliptic_curve256_algebra_ctx_t* ed25519 = elliptic_curve256_new_ed25519_algebra();
-    
+
     elliptic_curve256_scalar_t a;
     elliptic_curve256_scalar_t b;
     REQUIRE(ed25519);
     BN_CTX* bn_ctx = BN_CTX_new();
     BN_CTX_start(bn_ctx);
     BIGNUM* bn_a = BN_CTX_get(bn_ctx);
-    
+
     for (size_t i = 0; i < 1024; i++)
     {
         REQUIRE(RAND_bytes(a, sizeof(a)));
@@ -613,4 +613,21 @@ TEST_CASE( "reduce" ) {
     a[31] -= 2;
     REQUIRE(ed25519->reduce(ed25519, &b, &a) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
     elliptic_curve256_algebra_ctx_free(ed25519);
+}
+
+TEST_CASE( "calc_hram", "ed25519") {
+    ed25519_algebra_ctx_t* ctx = ed25519_algebra_ctx_new();
+    SECTION("param check") {
+        ed25519_le_scalar_t hram;
+        ed25519_point_t R, public_key;
+        const uint8_t message[2] = {0xde, 0xad};
+
+        REQUIRE(ed25519_calc_hram(ctx, &hram, &R, &public_key, message, sizeof(message), 0) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+        REQUIRE(ed25519_calc_hram(NULL, &hram, &R, &public_key, message, sizeof(message), 0) == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
+        REQUIRE(ed25519_calc_hram(ctx, NULL, &R, &public_key, message, sizeof(message), 0) == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
+        REQUIRE(ed25519_calc_hram(ctx, &hram, NULL, &public_key, message, sizeof(message), 0) == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
+        REQUIRE(ed25519_calc_hram(ctx, &hram, &R, NULL, message, sizeof(message), 0) == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
+        REQUIRE(ed25519_calc_hram(ctx, &hram, &R, &public_key, NULL, sizeof(message), 0) == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
+        REQUIRE(ed25519_calc_hram(ctx, &hram, &R, &public_key, message, 0, 0) == ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER);
+    }
 }
