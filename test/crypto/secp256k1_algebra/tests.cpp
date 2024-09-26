@@ -5,7 +5,7 @@
 #include <openssl/objects.h>
 #include <openssl/rand.h>
 
-#include <byteswap.h>
+#include "crypto/common/byteswap.h"
 #include <string.h>
 
 #include <tests/catch.hpp>
@@ -147,7 +147,7 @@ TEST_CASE( "verify_mul_sum", "zkp") {
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         
         elliptic_curve256_point_t proofs[3];
-        elliptic_curve256_scalar_t coeff[3] = {0};
+        elliptic_curve256_scalar_t coeff[3] = {{0}};
         val = 2;
         coeff[0][31] = 3;
         status = GFp_curve_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), proofs);
@@ -175,7 +175,7 @@ TEST_CASE( "verify_mul_sum", "zkp") {
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         
         elliptic_curve256_point_t proofs[3];
-        elliptic_curve256_scalar_t coeff[3] = {0};
+        elliptic_curve256_scalar_t coeff[3] = {{0}};
         val = 2;
         coeff[0][31] = 3;
         status = GFp_curve_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), proofs);
@@ -279,7 +279,7 @@ TEST_CASE( "invalid param", "zkp") {
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
         
         elliptic_curve256_point_t proofs[2];
-        elliptic_curve256_scalar_t coeff[2] = {0};
+        elliptic_curve256_scalar_t coeff[2] = {{0}};
         coeff[0][31] = 3;
         coeff[1][31] = 7;
         val = 5;

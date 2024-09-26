@@ -4,7 +4,7 @@
 #include <openssl/rand.h>
 #include <openssl/bn.h>
 
-#include <byteswap.h>
+#include "crypto/common/byteswap.h"
 #include <string.h>
 
 #include <tests/catch.hpp>
@@ -81,7 +81,7 @@ TEST_CASE( "verify_mul_sum", "zkp") {
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
 
         ed25519_point_t proofs[3];
-        ed25519_scalar_t coeff[3] = {0};
+        ed25519_scalar_t coeff[3] = {{0}};
         val = 2;
         coeff[0][31] = 3;
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), proofs);
@@ -109,7 +109,7 @@ TEST_CASE( "verify_mul_sum", "zkp") {
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
 
         ed25519_point_t proofs[3];
-        ed25519_scalar_t coeff[3] = {0};
+        ed25519_scalar_t coeff[3] = {{0}};
         val = 2;
         coeff[0][31] = 3;
         status = ed25519_algebra_generator_mul_data(ctx, (uint8_t*)&val, sizeof(val), proofs);
@@ -185,7 +185,7 @@ TEST_CASE( "invalid param", "zkp") {
         REQUIRE(status == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
 
         ed25519_point_t proofs[2];
-        ed25519_scalar_t coeff[2] = {0};
+        ed25519_scalar_t coeff[2] = {{0}};
         coeff[0][31] = 3;
         coeff[1][31] = 7;
         val = 5;

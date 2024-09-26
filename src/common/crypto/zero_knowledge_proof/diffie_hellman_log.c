@@ -1,6 +1,6 @@
 #include "crypto/zero_knowledge_proof/diffie_hellman_log.h"
 #include "crypto/drng/drng.h"
-#include <byteswap.h>
+#include "crypto/common/byteswap.h"
 #include <string.h>
 #include <openssl/sha.h>
 

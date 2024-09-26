@@ -3,7 +3,7 @@
 #include "crypto/keccak1600/keccak1600.h"
 #include "curve25519.c"
 
-#include <byteswap.h>
+#include "crypto/common/byteswap.h"
 
 #include <openssl/bn.h>
 #include <openssl/sha.h>

@@ -11,7 +11,7 @@ It takes the form of a library (`libcosigner`) containing the algorithms and sup
 This version of the code targets *Ubuntu Linux 20.04 LTS* release.
 The libraries and headers of the following dependencies are required:
 
-* OpenSSL version 1.1.1
+* OpenSSL version 1.1.1 or higher
 * libuuid (for tests)
 * libsecp256k1 (for tests, optional)
 
@@ -24,12 +24,12 @@ apt install build-essential libssl-dev uuid-dev libsecp256k1-dev
 
 Build the library and tests by running:
 ```sh
-make
+mkdir build; cd build; cmake ..; make
 ```
 
-To execute the test suite, run the command:
+To execute the test suite, run the command from the same build folder:
 ```sh
-make run-tests
+make test
 ```
 
 ## Usage

@@ -28,8 +28,8 @@ static elliptic_curve256_algebra_ctx_t* create_algebra(cosigner_sign_algorithm t
         case EDDSA_ED25519: return elliptic_curve256_new_secp256k1_algebra();
         case ECDSA_SECP256R1: return elliptic_curve256_new_secp256r1_algebra();
         case ECDSA_STARK: return elliptic_curve256_new_stark_algebra();
+        default: return NULL;
     }
-    return NULL;
 }
 
 
@@ -39,21 +39,21 @@ public:
     asymmetric_eddsa_platform(uint64_t id) : _id(id), _use_keccak(false) {}
     void set_use_keccak(bool use_keccak) {_use_keccak = use_keccak;}
 private:
-    void gen_random(size_t len, uint8_t* random_data) const
+    void gen_random(size_t len, uint8_t* random_data) const override
     {
         RAND_bytes(random_data, len);
     }
 
     uint64_t now_msec() const override { return std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now()).time_since_epoch().count(); }
 
-    const std::string get_current_tenantid() const {return TENANT_ID;}
-    uint64_t get_id_from_keyid(const std::string& key_id) const {return _id;}
-    void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const {assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const {assert(0);}
-    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const {assert(0);}
-    bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) {return true;}
-    void start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players) {}
-    void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const 
+    const std::string get_current_tenantid() const override {return TENANT_ID;}
+    uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
+    void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override { assert(0);}
+    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {assert(0);}
+    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {assert(0);}
+    bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
+    void start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players) override {}
+    void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override
     {
         for (auto i = flags.begin(); i != flags.end(); ++i)
             *i = _use_keccak ? EDDSA_KECCAK : 0;
@@ -71,7 +71,7 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
         std::lock_guard<std::mutex> lock(_mutex);
         if (_preprocessed_data.find(key_id) != _preprocessed_data.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        _preprocessed_data.emplace(key_id, std::move(std::vector<ed25519_scalar_t>(size)));
+        _preprocessed_data.emplace(key_id, std::move(std::vector<std::array<uint8_t, sizeof(ed25519_scalar_t)>>(size)));
     }
 
     void store_preprocessed_data(const std::string& key_id, uint64_t index, const ed25519_scalar_t& k) override
@@ -82,7 +82,7 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
         if (index >= it->second.size())
             throw cosigner_exception(cosigner_exception::INVALID_PRESIGNING_INDEX);
-        memcpy(it->second[index], k, sizeof(ed25519_scalar_t));
+        memcpy(&((it->second[index])[0]), k, sizeof(ed25519_scalar_t));
     }
 
     void load_preprocessed_data(const std::string& key_id, uint64_t index, ed25519_scalar_t& k) override
@@ -92,10 +92,10 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
         auto it = _preprocessed_data.find(key_id);
         if (it == _preprocessed_data.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        if (index >= it->second.size() || memcmp(it->second[index], ZERO, sizeof(ed25519_scalar_t)) == 0)
+        if (index >= it->second.size() || memcmp(&((it->second[index])[0]), ZERO, sizeof(ed25519_scalar_t)) == 0)
             throw cosigner_exception(cosigner_exception::INVALID_PRESIGNING_INDEX);
-        memcpy(k, it->second[index], sizeof(ed25519_scalar_t));
-        memset(it->second[index], 0, sizeof(ed25519_scalar_t));
+        memcpy(k, &((it->second[index])[0]), sizeof(ed25519_scalar_t));
+        memset(&((it->second[index])[0]), 0, sizeof(ed25519_scalar_t));
     }
 
     void delete_preprocessed_data(const std::string& key_id) override
@@ -105,7 +105,7 @@ class client_persistency : public asymmetric_eddsa_cosigner_client::preprocessin
     }
 
     mutable std::mutex _mutex;
-    std::map<std::string, std::vector<ed25519_scalar_t>> _preprocessed_data;
+    std::map<std::string, std::vector<std::array<uint8_t, sizeof(ed25519_scalar_t)>>> _preprocessed_data;
 };
 
 class server_persistency : public asymmetric_eddsa_cosigner_server::signing_persistency

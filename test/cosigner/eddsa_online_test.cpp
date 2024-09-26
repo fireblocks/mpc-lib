@@ -27,8 +27,8 @@ static elliptic_curve256_algebra_ctx_t* create_algebra(cosigner_sign_algorithm t
         case EDDSA_ED25519: return elliptic_curve256_new_secp256k1_algebra();
         case ECDSA_SECP256R1: return elliptic_curve256_new_secp256r1_algebra();
         case ECDSA_STARK: return elliptic_curve256_new_stark_algebra();
+        default: return NULL;
     }
-    return NULL;
 }
 
 
@@ -37,21 +37,21 @@ class eddsa_sign_platform : public platform_service
 public:
     eddsa_sign_platform(uint64_t id, bool use_keccak) : _id(id), _use_keccak(use_keccak) {}
 private:
-    void gen_random(size_t len, uint8_t* random_data) const
+    void gen_random(size_t len, uint8_t* random_data) const override
     {
         RAND_bytes(random_data, len);
     }
 
     uint64_t now_msec() const override { return std::chrono::time_point_cast<std::chrono::milliseconds>(Clock::now()).time_since_epoch().count(); }
 
-    const std::string get_current_tenantid() const {return TENANT_ID;}
-    uint64_t get_id_from_keyid(const std::string& key_id) const {return _id;}
-    void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const {assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const {assert(0);}
-    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const {assert(0);}
-    bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) {return true;}
-    void start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players) {}
-    void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const 
+    const std::string get_current_tenantid() const override {return TENANT_ID;}
+    uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
+    void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override {assert(0);}
+    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {assert(0);}
+    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {assert(0);}
+    bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
+    void start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players) override {}
+    void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override
     {
         for (auto i = flags.begin(); i != flags.end(); ++i)
             *i = _use_keccak ? EDDSA_KECCAK : 0;
@@ -142,7 +142,7 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     for (auto i = players.begin(); i != players.end(); ++i)
     {
         auto info = std::make_unique<eddsa_siging_info>(i->first, i->second, keccek);
-        services.emplace(i->first, move(info));
+        services.emplace(i->first, std::move(info));
         players_ids.insert(i->first);
         players_str.insert(std::to_string(i->first));
     }

@@ -47,11 +47,16 @@ if(NOT EMSCRIPTEN)
     target_compile_options(cosigner PRIVATE -fstack-protector-strong)
 endif()
 
-set(LINKER_VERSION_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/lib.lds)
-target_link_options(cosigner PRIVATE
-    "LINKER:--version-script=${LINKER_VERSION_SCRIPT}"
-    "LINKER:--no-undefined")
-set_target_properties(cosigner PROPERTIES LINK_DEPENDS ${LINKER_VERSION_SCRIPT})
+# Check for macOS platform
+if(NOT APPLE)
+    # For Linux/other systems, use version script and no-undefined
+    set(LINKER_VERSION_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/lib.lds)
+    target_link_options(cosigner PRIVATE
+        "LINKER:--version-script=${LINKER_VERSION_SCRIPT}"
+        "LINKER:--no-undefined")
+    set_target_properties(cosigner PROPERTIES LINK_DEPENDS ${LINKER_VERSION_SCRIPT})
+endif()
 
 target_include_directories(cosigner PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(cosigner PUBLIC OpenSSL::Crypto)
+target_include_directories(cosigner PUBLIC ${OPENSSL_INCLUDE_DIR})
+target_link_libraries(cosigner PRIVATE OpenSSL::Crypto)

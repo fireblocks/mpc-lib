@@ -12,6 +12,12 @@ add_executable(cosigner_test
     setup_test.cpp
 )
 
-target_link_libraries(cosigner_test PRIVATE tests_main cosigner Threads::Threads UUID::UUID)
+
+# Link the necessary libraries to the cosigner_test target
+if(APPLE)
+    target_link_libraries(cosigner_test PRIVATE tests_main cosigner Threads::Threads) # No UUID library on macOS
+else()
+    target_link_libraries(cosigner_test PRIVATE tests_main cosigner Threads::Threads UUID::UUID OpenSSL::Crypto)
+endif()
 
 add_test(NAME cosigner_test COMMAND cosigner_test)
