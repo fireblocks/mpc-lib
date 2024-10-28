@@ -1,5 +1,5 @@
 add_library(tests_main OBJECT tests_main.cpp)
-target_link_libraries(tests_main PRIVATE cosigner)
+target_link_libraries(tests_main PUBLIC cosigner)
 
 add_subdirectory(cosigner)
 add_subdirectory(crypto/drng)

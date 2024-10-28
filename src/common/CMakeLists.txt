@@ -58,5 +58,5 @@ if(NOT APPLE)
 endif()
 
 target_include_directories(cosigner PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_include_directories(cosigner PUBLIC ${OPENSSL_INCLUDE_DIR})
-target_link_libraries(cosigner PRIVATE OpenSSL::Crypto)
+
+target_link_libraries(cosigner PUBLIC OpenSSL::Crypto)

@@ -6,6 +6,6 @@ add_executable(paillier_test
 
 target_include_directories(paillier_test PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_options(paillier_test PRIVATE -Wall -Wextra)
-target_link_libraries(paillier_test PRIVATE tests_main OpenSSL::Crypto)
+target_link_libraries(paillier_test PRIVATE tests_main)
 
 add_test(NAME paillier_test COMMAND paillier_test)

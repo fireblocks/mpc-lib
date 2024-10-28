@@ -13,6 +13,6 @@ add_executable(zero_knowledge_proof_test
 
 target_include_directories(zero_knowledge_proof_test PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_options(zero_knowledge_proof_test PRIVATE -Wall -Wextra)
-target_link_libraries(zero_knowledge_proof_test PRIVATE tests_main OpenSSL::Crypto)
+target_link_libraries(zero_knowledge_proof_test PRIVATE tests_main)
 
 add_test(NAME zero_knowledge_proof_test COMMAND zero_knowledge_proof_test)

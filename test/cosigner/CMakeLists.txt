@@ -17,7 +17,7 @@ add_executable(cosigner_test
 if(APPLE)
     target_link_libraries(cosigner_test PRIVATE tests_main cosigner Threads::Threads) # No UUID library on macOS
 else()
-    target_link_libraries(cosigner_test PRIVATE tests_main cosigner Threads::Threads UUID::UUID OpenSSL::Crypto)
+    target_link_libraries(cosigner_test PRIVATE tests_main cosigner Threads::Threads UUID::UUID)
 endif()
 
 add_test(NAME cosigner_test COMMAND cosigner_test)

@@ -9,6 +9,6 @@ add_executable(shamir_secret_sharing_test
 
 target_include_directories(shamir_secret_sharing_test PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_compile_options(shamir_secret_sharing_test PRIVATE -Wall -Wextra)
-target_link_libraries(shamir_secret_sharing_test PRIVATE tests_main OpenSSL::Crypto)
+target_link_libraries(shamir_secret_sharing_test PRIVATE tests_main)
 
 add_test(NAME shamir_secret_sharing_test COMMAND shamir_secret_sharing_test)
