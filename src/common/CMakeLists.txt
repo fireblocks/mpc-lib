@@ -18,17 +18,27 @@ set(COSIGNER_FILES
     cosigner/cmp_ecdsa_offline_signing_service.cpp
     cosigner/cmp_ecdsa_online_signing_service.cpp
     cosigner/cmp_ecdsa_signing_service.cpp
+    cosigner/cmp_key_persistency.cpp
     cosigner/cmp_offline_refresh_service.cpp
     cosigner/cmp_setup_service.cpp
     cosigner/cosigner_exception.cpp
     cosigner/eddsa_online_signing_service.cpp
     cosigner/mta.cpp
-    cosigner/utils.cpp
+    cosigner/platform_service.cpp
     cosigner/timing_map.cpp
+    cosigner/utils.cpp
     logging/logging_t.c
 )
 
 add_library(cosigner SHARED ${COSIGNER_FILES})
+
+set_target_properties(cosigner PROPERTIES
+    CXX_VISIBILITY_PRESET "hidden"
+    C_VISIBILITY_PRESET "hidden"
+)
+
+include(GenerateExportHeader)
+generate_export_header(cosigner)
 
 target_compile_options(cosigner PRIVATE
     -Wall -Wextra -Wvla -Wswitch-enum -Wno-missing-field-initializers -Wno-unknown-pragmas -fdiagnostics-color=always
@@ -47,16 +57,7 @@ if(NOT EMSCRIPTEN)
     target_compile_options(cosigner PRIVATE -fstack-protector-strong)
 endif()
 
-# Check for macOS platform
-if(NOT APPLE)
-    # For Linux/other systems, use version script and no-undefined
-    set(LINKER_VERSION_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/lib.lds)
-    target_link_options(cosigner PRIVATE
-        "LINKER:--version-script=${LINKER_VERSION_SCRIPT}"
-        "LINKER:--no-undefined")
-    set_target_properties(cosigner PROPERTIES LINK_DEPENDS ${LINKER_VERSION_SCRIPT})
-endif()
-
+target_include_directories(cosigner PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
 target_include_directories(cosigner PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 target_link_libraries(cosigner PUBLIC OpenSSL::Crypto)

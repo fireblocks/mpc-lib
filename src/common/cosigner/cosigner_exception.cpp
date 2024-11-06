@@ -9,6 +9,10 @@ namespace common
 namespace cosigner
 {
 
+cosigner_exception::~cosigner_exception()
+{
+}
+
 void throw_cosigner_exception(verifiable_secret_sharing_status status)
 {
     switch (status)

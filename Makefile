@@ -1,10 +1,18 @@
-all:
-	@$(MAKE) -C src/ all
-	@$(MAKE) -C test/ all
-	
-clean:
-	@$(MAKE) -C src/ clean
-	@$(MAKE) -C test/ clean
+MKDIR=mkdir
+CMAKE=cmake
+CTEST=ctest
 
-run-tests:
-	@$(MAKE) -C test/ run
+all: build
+
+configure:
+	$(MKDIR) -p build
+	$(CMAKE) -S . -B build
+
+build: configure
+	$(CMAKE) --build build
+	
+clean: configure
+	$(CMAKE) --build build --target clean
+
+run-tests: build
+	$(CTEST) --test-dir build

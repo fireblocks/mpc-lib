@@ -34,6 +34,10 @@ static inline std::string HexStr(const T itbegin, const T itend)
     return rv;
 }
 
+asymmetric_eddsa_cosigner_client::preprocessing_persistency::~preprocessing_persistency()
+{
+}
+
 asymmetric_eddsa_cosigner_client::asymmetric_eddsa_cosigner_client(platform_service& cosigner_service, const cmp_key_persistency& key_persistency, preprocessing_persistency& preprocessing_persistency) : 
     asymmetric_eddsa_cosigner(cosigner_service, key_persistency), _preprocessing_persistency(preprocessing_persistency) {}
 

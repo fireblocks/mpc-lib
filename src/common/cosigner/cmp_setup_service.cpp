@@ -47,6 +47,10 @@ const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> cmp_setup_service::_ed25519(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> cmp_setup_service::_stark(elliptic_curve256_new_stark_algebra(), elliptic_curve256_algebra_ctx_free);
 
+cmp_setup_service::setup_key_persistency::~setup_key_persistency()
+{
+}
+
 void cmp_setup_service::generate_setup_commitments(const std::string& key_id, const std::string& tenant_id, cosigner_sign_algorithm algorithm, const std::vector<uint64_t>& players_ids, uint8_t t, uint64_t ttl, const share_derivation_args& derive_from, commitment& setup_commitment)
 {
     const size_t n = players_ids.size();

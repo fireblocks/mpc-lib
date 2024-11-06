@@ -1,6 +1,8 @@
 #pragma once
 
+#include "cosigner_export.h"
 #include "crypto/commitments/commitments.h"
+
 #include <openssl/sha.h>
 
 #include <string>
@@ -12,7 +14,7 @@ namespace common
 namespace cosigner
 {
 
-class prf
+class COSIGNER_EXPORT prf
 {
 public:
 

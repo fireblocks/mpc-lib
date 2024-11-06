@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 typedef enum {
     COSIGNER_LOG_LEVEL_FATAL = 50000,
     COSIGNER_LOG_LEVEL_ERROR = 40000,
@@ -15,9 +17,9 @@ typedef void (*cosigner_log_callback)(int level, const char* file, int line, con
 extern "C" {
 #endif //__cplusplus
 
-void cosigner_log_init(cosigner_log_callback cb, void* userp);
+COSIGNER_EXPORT void cosigner_log_init(cosigner_log_callback cb, void* userp);
 
-void cosigner_log_msg(int level, const char* file, int line, const char* func, const char* message, ...)
+COSIGNER_EXPORT void cosigner_log_msg(int level, const char* file, int line, const char* func, const char* message, ...)
     __attribute__ ((format (printf, 5, 6)));
 
 #ifdef __cplusplus

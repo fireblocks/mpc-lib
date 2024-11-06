@@ -1,6 +1,8 @@
 #ifndef __KECCAK1600_H__
 #define __KECCAK1600_H__
 
+#include "cosigner_export.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -22,9 +24,9 @@ typedef struct {
     unsigned char pad;
 } KECCAK1600_CTX;
 
-int keccak1600_init(KECCAK1600_CTX *ctx, size_t md_size_in_bits, unsigned char pad);
-int keccak1600_update(KECCAK1600_CTX *ctx, const uint8_t *inp, size_t len);
-int keccak1600_final(KECCAK1600_CTX *ctx, unsigned char *md);
+COSIGNER_EXPORT int keccak1600_init(KECCAK1600_CTX *ctx, size_t md_size_in_bits, unsigned char pad);
+COSIGNER_EXPORT int keccak1600_update(KECCAK1600_CTX *ctx, const uint8_t *inp, size_t len);
+COSIGNER_EXPORT int keccak1600_final(KECCAK1600_CTX *ctx, unsigned char *md);
 
 #ifdef __cplusplus
 }

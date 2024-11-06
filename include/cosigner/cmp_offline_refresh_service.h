@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/types.h"
 
 #include <functional>
@@ -17,7 +19,7 @@ class cmp_key_persistency;
 class platform_service;
 struct cmp_signature_preprocessed_data;
 
-class cmp_offline_refresh_service final
+class COSIGNER_EXPORT cmp_offline_refresh_service final
 {
 public:
     typedef std::function<void(uint64_t index, cmp_signature_preprocessed_data& data)> preprocessed_data_handler;
@@ -25,7 +27,7 @@ public:
     class offline_refresh_key_persistency
     {
     public:
-        virtual ~offline_refresh_key_persistency() {}
+        virtual ~offline_refresh_key_persistency();
 
         virtual void load_refresh_key_seeds(const std::string& request_id, std::map<uint64_t, byte_vector_t>& player_id_to_seed) const = 0;
         virtual void store_refresh_key_seeds(const std::string& request_id, const std::map<uint64_t, byte_vector_t>& player_id_to_seed) = 0;

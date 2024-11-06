@@ -36,6 +36,10 @@ static inline std::string HexStr(const T itbegin, const T itend)
 }
 #endif
 
+cmp_ecdsa_offline_signing_service::preprocessing_persistency::~preprocessing_persistency()
+{
+}
+
 void cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing(const std::string& tenant_id, const std::string& key_id, const std::string& request_id, uint32_t start_index, uint32_t count, uint32_t total_count, const std::set<uint64_t>& players_ids, std::vector<cmp_mta_request>& mta_requests)
 {
     LOG_INFO("Entering request id = %s", request_id.c_str());

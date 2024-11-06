@@ -1,7 +1,10 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/types.h"
 #include "cosigner/timing_map.h"
+
 #include <openssl/crypto.h>
 #include <map>
 #include <memory>
@@ -37,13 +40,13 @@ struct eddsa_signing_metadata
     uint32_t version;
 };
 
-class eddsa_online_signing_service final
+class COSIGNER_EXPORT eddsa_online_signing_service final
 {
 public:
     class signing_persistency
     {
     public:
-        virtual ~signing_persistency() {}
+        virtual ~signing_persistency();
         virtual void store_signing_data(const std::string& txid, const eddsa_signing_metadata& data) = 0;
         virtual void load_signing_data(const std::string& txid, eddsa_signing_metadata& data) const = 0;
         virtual void update_signing_data(const std::string& txid, const eddsa_signing_metadata& data) = 0;

@@ -1,9 +1,12 @@
 #ifndef __HD_DERIVE_H__
 #define __HD_DERIVE_H__
 
+#include "cosigner_export.h"
+
+#include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
+
 #include <assert.h>
 #include <stdint.h>
-#include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,11 +46,11 @@ inline uint32_t bip32_hardened_index(uint32_t idx)
     return (1U<<31) + idx;
 }
 
-hd_derive_status derive_public_key_generic(const elliptic_curve256_algebra_ctx_t *ctx, PubKey derived_key, const PubKey pubkey, const HDChaincode chaincode, const uint32_t* path, const uint32_t path_len);
-hd_derive_status derive_private_key_generic(const elliptic_curve256_algebra_ctx_t *ctx, PrivKey derived_privkey, const PubKey pubkey, const PrivKey privkey, const HDChaincode chaincode, const uint32_t* path, const uint32_t path_len);
-hd_derive_status derive_private_and_public_keys(const elliptic_curve256_algebra_ctx_t *ctx, PrivKey derived_privkey, PubKey derived_pubkey, const PubKey pubkey, const PrivKey privkey, const HDChaincode chaincode, const uint32_t* path, const uint32_t path_len);
+COSIGNER_EXPORT hd_derive_status derive_public_key_generic(const elliptic_curve256_algebra_ctx_t *ctx, PubKey derived_key, const PubKey pubkey, const HDChaincode chaincode, const uint32_t* path, const uint32_t path_len);
+COSIGNER_EXPORT hd_derive_status derive_private_key_generic(const elliptic_curve256_algebra_ctx_t *ctx, PrivKey derived_privkey, const PubKey pubkey, const PrivKey privkey, const HDChaincode chaincode, const uint32_t* path, const uint32_t path_len);
+COSIGNER_EXPORT hd_derive_status derive_private_and_public_keys(const elliptic_curve256_algebra_ctx_t *ctx, PrivKey derived_privkey, PubKey derived_pubkey, const PubKey pubkey, const PrivKey privkey, const HDChaincode chaincode, const uint32_t* path, const uint32_t path_len);
 
-hd_derive_status build_bip44_path(Bip44Path path, uint32_t asset_num, uint32_t account, uint32_t change = 0, uint32_t addr_index = 0);
+COSIGNER_EXPORT hd_derive_status build_bip44_path(Bip44Path path, uint32_t asset_num, uint32_t account, uint32_t change = 0, uint32_t addr_index = 0);
 
 #ifdef __cplusplus
 }

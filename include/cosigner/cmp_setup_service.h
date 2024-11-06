@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/cmp_key_persistency.h"
 #include "cosigner/platform_service.h"
 #include "cosigner/types.h"
@@ -54,13 +56,13 @@ struct setup_data
 };
 
 // this class implements MPC CMP key generation based on https://eprint.iacr.org/2020/492 paper
-class cmp_setup_service final
+class COSIGNER_EXPORT cmp_setup_service final
 {
 public:
     class setup_key_persistency : public cmp_key_persistency
     {
     public:
-        virtual ~setup_key_persistency() {}
+        virtual ~setup_key_persistency();
 
         virtual void store_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, uint64_t ttl = 0) = 0;
 

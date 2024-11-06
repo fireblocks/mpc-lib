@@ -3,7 +3,6 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(UUID REQUIRED)
 find_package(Threads REQUIRED)
 
-
 add_executable(cosigner_test
     ecdsa_offline_test.cpp
     ecdsa_online_test.cpp
@@ -11,7 +10,6 @@ add_executable(cosigner_test
     eddsa_online_test.cpp
     setup_test.cpp
 )
-
 
 # Link the necessary libraries to the cosigner_test target
 if(APPLE)

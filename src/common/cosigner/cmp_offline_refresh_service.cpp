@@ -22,6 +22,10 @@ const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> cmp_offline_refresh_service::_ed25519(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> cmp_offline_refresh_service::_stark(elliptic_curve256_new_stark_algebra(), elliptic_curve256_algebra_ctx_free);
 
+cmp_offline_refresh_service::offline_refresh_key_persistency::~offline_refresh_key_persistency()
+{
+}
+
 void cmp_offline_refresh_service::refresh_key_request(const std::string& tenant_id, const std::string& key_id, const std::string& request_id, const std::set<uint64_t>& players_ids, std::map<uint64_t, byte_vector_t>& encrypted_seeds)
 {
     if (tenant_id.compare(_key_persistency.get_tenantid_from_keyid(key_id)) != 0)

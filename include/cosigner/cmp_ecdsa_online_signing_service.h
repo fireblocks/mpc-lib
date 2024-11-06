@@ -1,8 +1,9 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/cmp_ecdsa_signing_service.h"
 #include "cosigner/timing_map.h"
-
 
 namespace fireblocks
 {
@@ -30,13 +31,13 @@ struct cmp_signing_metadata
 };
 
 // this class implements MPC CMP for online signing based on https://eprint.iacr.org/2020/492 paper
-class cmp_ecdsa_online_signing_service final : public cmp_ecdsa_signing_service
+class COSIGNER_EXPORT cmp_ecdsa_online_signing_service final : public cmp_ecdsa_signing_service
 {
 public:
     class signing_persistency
     {
     public:
-        virtual ~signing_persistency() {}
+        virtual ~signing_persistency();
 
         virtual void store_cmp_signing_data(const std::string& txid, const cmp_signing_metadata& data) = 0;
         virtual void load_cmp_signing_data(const std::string& txid, cmp_signing_metadata& data) const = 0;
@@ -45,7 +46,7 @@ public:
     };
 
     cmp_ecdsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& persistency);
-    
+
     void start_signing(const std::string& key_id, const std::string& txid, cosigner_sign_algorithm algorithm, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<cmp_mta_request>& mta_requests);
     uint64_t mta_response(const std::string& txid, const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, uint32_t version, cmp_mta_responses& response);
     uint64_t mta_verify(const std::string& txid, const std::map<uint64_t, cmp_mta_responses>& mta_responses, std::vector<cmp_mta_deltas>& deltas);

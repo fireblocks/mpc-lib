@@ -49,6 +49,10 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
     }
 }
 
+cmp_ecdsa_online_signing_service::signing_persistency::~signing_persistency()
+{
+}
+
 cmp_ecdsa_online_signing_service::cmp_ecdsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& persistency):
     cmp_ecdsa_signing_service(service, key_persistency),
     _signing_persistency(persistency),

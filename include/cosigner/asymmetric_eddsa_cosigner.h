@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "crypto/ed25519_algebra/ed25519_algebra.h"
 #include "blockchain/mpc/hd_derive.h"
 #include "cosigner/types.h"
@@ -32,7 +34,7 @@ struct Rs_and_commitments
     eddsa_commitment R_commitment;
 };
 
-class asymmetric_eddsa_cosigner
+class COSIGNER_EXPORT asymmetric_eddsa_cosigner
 {
 public:
     asymmetric_eddsa_cosigner(platform_service& cosigner_service, const cmp_key_persistency& key_persistency);

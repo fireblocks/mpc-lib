@@ -1,9 +1,12 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "asymmetric_eddsa_cosigner.h"
 #include "crypto/commitments/commitments.h"
 #include "crypto/ed25519_algebra/ed25519_algebra.h"
 #include "cosigner/timing_map.h"
+
 #include <openssl/crypto.h>
 
 #include <array>
@@ -42,13 +45,13 @@ struct asymmetric_eddsa_signing_metadata
 
 typedef std::array<uint8_t, sizeof(commitments_sha256_t)> eddsa_commitment;
 
-class asymmetric_eddsa_cosigner_server : public asymmetric_eddsa_cosigner
+class COSIGNER_EXPORT asymmetric_eddsa_cosigner_server : public asymmetric_eddsa_cosigner
 {
 public:
     class signing_persistency
     {
     public:
-        virtual ~signing_persistency() {}
+        virtual ~signing_persistency();
 
         // This function should allocate preprocessed data array sized size
         virtual void create_preprocessed_data(const std::string& key_id, uint64_t size) = 0;

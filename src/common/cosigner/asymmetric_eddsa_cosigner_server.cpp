@@ -27,6 +27,9 @@ private:
     ed25519_scalar_t& _secret;
 };
 
+asymmetric_eddsa_cosigner_server::signing_persistency::~signing_persistency()
+{
+}
 
 asymmetric_eddsa_cosigner_server::asymmetric_eddsa_cosigner_server(platform_service& cosigner_service, const cmp_key_persistency& key_persistency, signing_persistency& signing_persistency) :
     asymmetric_eddsa_cosigner(cosigner_service, key_persistency), _signing_persistency(signing_persistency), _timing_map(cosigner_service) {}

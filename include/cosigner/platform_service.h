@@ -1,10 +1,13 @@
 #pragma once
 
+#include "cosigner_export.h"
+
+#include "cosigner/types.h"
+
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
-#include "cosigner/types.h"
 
 namespace fireblocks
 {
@@ -17,10 +20,10 @@ struct cmp_key_metadata;
 struct auxiliary_keys;
 struct signing_data;
 
-class platform_service
+class COSIGNER_EXPORT platform_service
 {
 public:
-    virtual ~platform_service() {}
+    virtual ~platform_service();
 
     // generate true randomness
     virtual void gen_random(size_t len, uint8_t* random_data) const = 0;

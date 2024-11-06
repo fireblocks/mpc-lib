@@ -1,6 +1,8 @@
 #ifndef __ELLIPTIC_CURVE256_ALGEBRA_H__
 #define __ELLIPTIC_CURVE256_ALGEBRA_H__
 
+#include "cosigner_export.h"
+
 #include "crypto/elliptic_curve_algebra/elliptic_curve_algebra_status.h"
 #include <stdint.h>
 
@@ -72,10 +74,10 @@ typedef struct elliptic_curve256_algebra_ctx
     const struct bignum_st *(*order_internal)(const struct elliptic_curve256_algebra_ctx *ctx);
 } elliptic_curve256_algebra_ctx_t;
 
-elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_secp256k1_algebra();
-elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_secp256r1_algebra();
-elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_ed25519_algebra();
-elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_stark_algebra();
+COSIGNER_EXPORT elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_secp256k1_algebra();
+COSIGNER_EXPORT elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_secp256r1_algebra();
+COSIGNER_EXPORT elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_ed25519_algebra();
+COSIGNER_EXPORT elliptic_curve256_algebra_ctx_t *elliptic_curve256_new_stark_algebra();
 
 inline void elliptic_curve256_algebra_ctx_free(elliptic_curve256_algebra_ctx_t* ctx) 
 {

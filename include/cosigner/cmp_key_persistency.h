@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/types.h"
 
 #include <map>
@@ -42,10 +44,10 @@ struct auxiliary_keys
     std::shared_ptr<struct ring_pedersen_private> ring_pedersen;
 };
 
-class cmp_key_persistency
+class COSIGNER_EXPORT cmp_key_persistency
 {
 public:
-    virtual ~cmp_key_persistency() {}
+    virtual ~cmp_key_persistency();
     virtual bool key_exist(const std::string& key_id) const = 0;
     // This function should throw cosigner_exception::BAD_KEY if key doesn't exist
     virtual void load_key(const std::string& key_id, cosigner_sign_algorithm& algorithm, elliptic_curve256_scalar_t& private_key) const = 0;

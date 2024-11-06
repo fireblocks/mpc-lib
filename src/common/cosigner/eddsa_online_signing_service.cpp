@@ -31,8 +31,12 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
 
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> eddsa_online_signing_service::_ed25519(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
 
+eddsa_online_signing_service::signing_persistency::~signing_persistency()
+{
+}
+
 eddsa_online_signing_service::eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& preprocessing_persistency):
-    _service(service), 
+    _service(service),
     _key_persistency(key_persistency),
     _signing_persistency(preprocessing_persistency),
     _timing_map(service) {}

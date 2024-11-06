@@ -21,6 +21,10 @@ const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> cmp_ecdsa_signing_service::_secp256r1(elliptic_curve256_new_secp256r1_algebra(), elliptic_curve256_algebra_ctx_free);
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> cmp_ecdsa_signing_service::_stark(elliptic_curve256_new_stark_algebra(), elliptic_curve256_algebra_ctx_free);
 
+cmp_ecdsa_signing_service::~cmp_ecdsa_signing_service()
+{
+}
+
 cmp_mta_request cmp_ecdsa_signing_service::create_mta_request(ecdsa_signing_data& data, const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::vector<uint8_t>& aad, const cmp_key_metadata& metadata, const std::shared_ptr<paillier_public_key_t>& paillier)
 {
     throw_cosigner_exception(algebra->rand(algebra, &data.k.data));

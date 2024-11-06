@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/cmp_ecdsa_signing_service.h"
 
 namespace fireblocks
@@ -12,13 +14,13 @@ namespace cosigner
 struct cmp_signature_preprocessed_data;
 
 // this class implements MPC CMP for offline signing based on https://eprint.iacr.org/2020/492 paper
-class cmp_ecdsa_offline_signing_service final : public cmp_ecdsa_signing_service
+class COSIGNER_EXPORT cmp_ecdsa_offline_signing_service final : public cmp_ecdsa_signing_service
 {
 public:
     class preprocessing_persistency
     {
     public:
-        virtual ~preprocessing_persistency() {}
+        virtual ~preprocessing_persistency();
 
         virtual void store_preprocessing_metadata(const std::string& request_id, const preprocessing_metadata& data, bool override = false) = 0;
         virtual void load_preprocessing_metadata(const std::string& request_id, preprocessing_metadata& data) const = 0;

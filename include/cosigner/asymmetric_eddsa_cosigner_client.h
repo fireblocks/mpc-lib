@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cosigner_export.h"
+
 #include "cosigner/asymmetric_eddsa_cosigner.h"
 
 #include <array>
@@ -16,13 +18,14 @@ namespace cosigner
 {
 
 
-class asymmetric_eddsa_cosigner_client : public asymmetric_eddsa_cosigner
+class COSIGNER_EXPORT asymmetric_eddsa_cosigner_client : public asymmetric_eddsa_cosigner
 {
 public:
     class preprocessing_persistency
     {
     public:
-        virtual ~preprocessing_persistency() {}
+        virtual ~preprocessing_persistency();
+
         // This function should allocate preprocessed data array sized size
         virtual void create_preprocessed_data(const std::string& key_id, uint64_t size) = 0;
         // This function set the value k at index, in case index is larger then larger then array size the function should throw exception
