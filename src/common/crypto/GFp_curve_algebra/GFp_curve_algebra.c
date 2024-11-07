@@ -1052,7 +1052,7 @@ static elliptic_curve_algebra_status ec_reduce_stark(const struct elliptic_curve
     }
     else
         ret = ELLIPTIC_CURVE_ALGEBRA_INVALID_SCALAR;
-    memset(tmp, 0, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(tmp, sizeof(elliptic_curve256_scalar_t));
     return ret;
 }
 
