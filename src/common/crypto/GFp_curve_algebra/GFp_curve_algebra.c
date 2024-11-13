@@ -84,7 +84,8 @@ GFp_curve_algebra_ctx_t *stark_algebra_ctx_new()
     GFp_curve_algebra_ctx_t *algebra = malloc(sizeof(GFp_curve_algebra_ctx_t));
     if (!algebra)
         return NULL;
-
+    algebra->curve = NULL;
+    
     ctx = BN_CTX_new();
     if (!ctx)
         goto cleanup;
