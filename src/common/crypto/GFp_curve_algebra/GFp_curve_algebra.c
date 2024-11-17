@@ -344,10 +344,10 @@ elliptic_curve_algebra_status GFp_curve_algebra_verify_linear_combination(const 
     }
 
     zero = BN_CTX_get(bn_ctx);
-    BN_zero(zero);
     tmp = EC_POINT_new(ctx->curve);
     if (!zero || !tmp)
         goto cleanup;
+    BN_zero(zero);
     if (!EC_POINTs_mul(ctx->curve, tmp, zero, points_count, (const EC_POINT**)points, (const BIGNUM**)coeff, bn_ctx))
     {
         status = ELLIPTIC_CURVE_ALGEBRA_UNKNOWN_ERROR;

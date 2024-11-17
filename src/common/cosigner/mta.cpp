@@ -818,6 +818,11 @@ void response_verifier::process_paillier(const BIGNUM* e, const BIGNUM* request,
     BIGNUM* B = BN_CTX_get(_ctx.get());
     BIGNUM* gamma = BN_CTX_get(_ctx.get());
     
+    if (!tmp1 || !tmp2 || !B || !gamma)
+    {
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+
     if (is_coprime_fast(response, _my_paillier->pub.n, _ctx.get()) != 1)
     {
         LOG_ERROR("response is not a valid ciphertext");
@@ -953,6 +958,12 @@ void response_verifier::process_ring_pedersen(const BIGNUM* e, const mta_range_z
     BIGNUM* tmp1 = BN_CTX_get(_ctx.get());
     BIGNUM* tmp2 = BN_CTX_get(_ctx.get());
     uint8_t gamma[2 * sizeof(uint64_t)];
+
+    if (!tmp1 || !tmp2)
+    {
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+    
     if (!RAND_bytes(gamma, 2 * sizeof(uint64_t)))
     {
         LOG_ERROR("Failed to get random number, error %lu", ERR_get_error());

@@ -816,10 +816,11 @@ ring_pedersen_status ring_pedersen_verify_batch_commitments_internal(const ring_
     B = BN_CTX_get(ctx);
     tmp1 = BN_CTX_get(ctx);
     tmp2 = BN_CTX_get(ctx);
-    BN_one(B);
 
     if (!t_exp || !B || !tmp1 || !tmp2)
         goto cleanup;
+        
+    BN_one(B);
 
     ring_pedersen_init_mont(&priv->pub, ctx);
     status = RING_PEDERSEN_UNKNOWN_ERROR;
