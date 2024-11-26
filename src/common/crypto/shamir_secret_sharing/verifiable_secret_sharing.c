@@ -601,8 +601,11 @@ void verifiable_secret_sharing_free_shares(verifiable_secret_sharing_t *shares)
     if (shares)
     {
         free(shares->ids);
-        OPENSSL_cleanse(shares->shares, shares->num_shares * sizeof(shamir_secret_sharing_scalar_t));
-        free(shares->shares);
+        if (shares->shares)
+        {
+            OPENSSL_cleanse(shares->shares, shares->num_shares * sizeof(shamir_secret_sharing_scalar_t));
+            free(shares->shares);
+        }
         free(shares->proofs);
         free(shares->coefficient_proofs);
         free(shares);
