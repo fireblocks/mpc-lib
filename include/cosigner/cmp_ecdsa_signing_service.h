@@ -20,7 +20,7 @@ namespace cosigner
 
 namespace mta
 {
-    class response_verifier;
+    class base_response_verifier;
 }
 
 class cmp_key_persistency;
@@ -101,7 +101,7 @@ protected:
     static cmp_mta_response create_mta_response(ecdsa_signing_data& data, const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::vector<uint8_t>& aad, const cmp_key_metadata& metadata,
         const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, size_t index, const elliptic_curve_scalar& key, const auxiliary_keys& aux_keys);
     static cmp_mta_deltas mta_verify(ecdsa_signing_data& data, const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::string& uuid, const std::vector<uint8_t>& aad, const cmp_key_metadata& metadata,
-        const std::map<uint64_t, cmp_mta_responses>& mta_responses, size_t index, const auxiliary_keys& aux_keys, std::map<uint64_t, mta::response_verifier>& verifers);
+        const std::map<uint64_t, cmp_mta_responses>& mta_responses, size_t index, const auxiliary_keys& aux_keys, std::map<uint64_t, std::unique_ptr<mta::base_response_verifier>>& verifiers);
     static void calc_R(ecdsa_signing_data& data, elliptic_curve_point& R, const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::string& uuid, const cmp_key_metadata& metadata,
         const std::map<uint64_t, std::vector<cmp_mta_deltas>>& deltas, size_t index);
 

@@ -139,12 +139,12 @@ static verifiable_secret_sharing_status verifiable_secret_sharing_split_impl(con
     shares_local = (verifiable_secret_sharing_t*)calloc(1, sizeof(verifiable_secret_sharing_t));
     if (!shares_local)
         return VERIFIABLE_SECRET_SHARING_OUT_OF_MEMORY;
+    BN_CTX_start(ctx);
     if (!(bn_secret = BN_bin2bn(secret, secret_len, NULL)))
         goto cleanup;
     if (!(bn_prime = BN_bin2bn(algebra->order(algebra), ELLIPTIC_CURVE_FIELD_SIZE, NULL)))
         goto cleanup;
     
-    BN_CTX_start(ctx);
     assert(BN_is_prime_ex(bn_prime, 1000, ctx, NULL));
     BN_set_flags(bn_prime, BN_FLG_CONSTTIME);
 
@@ -194,7 +194,9 @@ verifiable_secret_sharing_status verifiable_secret_sharing_split(const elliptic_
         return VERIFIABLE_SECRET_SHARING_INVALID_PARAMETER;
     ctx = BN_CTX_new();
     if (!ctx)
-        goto cleanup;
+    {
+        return VERIFIABLE_SECRET_SHARING_OUT_OF_MEMORY;
+    }
     BN_CTX_start(ctx);
     
     mat = (BIGNUM**)calloc(n * t, sizeof(BIGNUM*));
@@ -263,7 +265,9 @@ verifiable_secret_sharing_status verifiable_secret_sharing_split_with_custom_ids
 
     ctx = BN_CTX_new();
     if (!ctx)
-        goto cleanup;
+    {
+        return VERIFIABLE_SECRET_SHARING_OUT_OF_MEMORY;
+    }
     BN_CTX_start(ctx);
     
     mat = (BIGNUM**)calloc(n * t, sizeof(BIGNUM*));
@@ -336,7 +340,7 @@ verifiable_secret_sharing_status verifiable_secret_sharing_get_share(const verif
         return VERIFIABLE_SECRET_SHARING_INVALID_PARAMETER;
     if (index >= shares->num_shares)
         return VERIFIABLE_SECRET_SHARING_INVALID_INDEX;
-    if (!shares->shares)
+    if (!shares->shares || !shares->shares[index])
         return VERIFIABLE_SECRET_SHARING_UNKNOWN_ERROR;
     share->id = shares->ids[index];
     memcpy(share->data, shares->shares[index], sizeof(shamir_secret_sharing_scalar_t));
@@ -478,15 +482,14 @@ verifiable_secret_sharing_status verifiable_secret_sharing_reconstruct(const ell
     }
 
     ctx = BN_CTX_new();
-
     if (!ctx)
         return ret;
+    BN_CTX_start(ctx);
     
     bn_prime = algebra->order_internal(algebra);
     if (!bn_prime)
         goto cleanup;
 
-    BN_CTX_start(ctx);
     sum = BN_CTX_get(ctx);
     if (!sum)
         goto cleanup;
@@ -541,8 +544,8 @@ verifiable_secret_sharing_status verifiable_secret_sharing_verify_share(const el
     ctx = BN_CTX_new();
     if (!ctx)
         return VERIFIABLE_SECRET_SHARING_OUT_OF_MEMORY;
-    
     BN_CTX_start(ctx);
+    
     x = BN_CTX_get(ctx);
     if (!x || !BN_set_word(x, id))
         goto cleanup;

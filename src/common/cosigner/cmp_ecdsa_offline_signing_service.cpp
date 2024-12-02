@@ -200,7 +200,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
     }
 
     std::string uuid = metadata.key_id + request_id;
-    std::map<uint64_t, mta::response_verifier> verifers;
+    std::map<uint64_t, std::unique_ptr<mta::base_response_verifier>> verifiers;
     for (auto it = mta_responses.begin(); it != mta_responses.end(); ++it)
     {
         if (it->first == my_id)
@@ -208,8 +208,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
         const auto& other = key_md.players_info.at(it->first);
         auto aad = build_aad(uuid, it->first, key_md.seed);
 
-        mta::response_verifier verifer(it->first, algebra, aad, aux.paillier, other.paillier, aux.ring_pedersen);
-        verifers.emplace(it->first, std::move(verifer));
+        verifiers[it->first] = mta::new_response_verifier(metadata.count, it->first, algebra, aad, aux.paillier, other.paillier, aux.ring_pedersen);
     }
 
     auto aad = build_aad(uuid, my_id, key_md.seed);
@@ -217,7 +216,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
     {
         ecdsa_signing_data data;
         _preprocessing_persistency.load_preprocessing_data(request_id, metadata.start_index + i, data);
-        cmp_mta_deltas delta = mta_verify(data, algebra, my_id, uuid, aad, key_md, mta_responses, i, aux, verifers);
+        cmp_mta_deltas delta = mta_verify(data, algebra, my_id, uuid, aad, key_md, mta_responses, i, aux, verifiers);
         deltas.push_back(std::move(delta));
         _preprocessing_persistency.store_preprocessing_data(request_id, metadata.start_index + i, data);
     }
@@ -226,7 +225,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
     {
         if (it->first == my_id)
             continue;
-        verifers.at(it->first).verify();
+        verifiers.at(it->first)->verify();
     }
     
     return my_id;

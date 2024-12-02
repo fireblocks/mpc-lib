@@ -423,12 +423,26 @@ static std::vector<uint8_t> mta_range_generate_zkp(const elliptic_curve256_algeb
     return serialize_mta_range_zkp(proof, ring_pedersen, private_key, public_key);
 }
 
-cmp_mta_message request(uint64_t my_id, const elliptic_curve256_algebra_ctx_t* algebra, const elliptic_curve_scalar& k, const elliptic_curve_scalar& gamma, const elliptic_curve_scalar& a, const elliptic_curve_scalar& b, 
-    const byte_vector_t& aad, const std::shared_ptr<paillier_public_key_t>& paillier, const std::map<uint64_t, cmp_player_info>& players, std::map<uint64_t, byte_vector_t>& proofs, std::map<uint64_t, byte_vector_t>& G_proofs)
+//implements phase 1 of ECDSA signing
+//Since the cmp_mta_message has a common part for all parties and a specific part for each party 
+//this function prefills the common part and creates a map of proofs to feel the remaining part for each party individually.
+cmp_mta_message request(const uint64_t my_id, 
+                        const elliptic_curve256_algebra_ctx_t* algebra, 
+                        const elliptic_curve_scalar& k,                         //signing secret (randomness), saved on ecdsa_preprocessing_data state
+                        const elliptic_curve_scalar& gamma,                     //signing secret (required for MtA), saved on ecdsa_preprocessing_data state
+                        const elliptic_curve_scalar& a,                         //secret used for Rddh proof, saved on ecdsa_preprocessing_data state
+                        const elliptic_curve_scalar& b,                         //secret used for Rddh proof, saved on ecdsa_preprocessing_data state
+                        const byte_vector_t& aad,                               //additional authenticated data
+                        const std::shared_ptr<paillier_public_key_t>& paillier, //from key setup
+                        const std::map<uint64_t, cmp_player_info>& players,     //maps all parties (players) ids to parameters from key setup phase
+                        std::map<uint64_t, byte_vector_t>& proofs,              //output map all all parties (players) ids to Rddh proof messages
+                        std::map<uint64_t, byte_vector_t>& G_proofs)            //output map all all parties (players) ids to "log" proof messages
 {
     cmp_mta_message mta;
-    paillier_ciphertext_t *ciphertext = NULL;
+    paillier_ciphertext_t *ciphertext = NULL; //will hold paillier encrypted k. Called K in the document
     long status = paillier_encrypt_to_ciphertext(paillier.get(), k.data, sizeof(elliptic_curve256_scalar_t), &ciphertext);
+
+    //create self releasing guard in case of an exception thrown in the context
     std::unique_ptr<paillier_ciphertext_t, void (*)(paillier_ciphertext_t*)> ciphertext_guard(ciphertext, paillier_free_ciphertext);
     if (status != PAILLIER_SUCCESS)
     {
@@ -596,15 +610,57 @@ elliptic_curve_scalar decrypt_mta_response(uint64_t other_id, const elliptic_cur
     return ret;
 }
 
-
-response_verifier::response_verifier(uint64_t other_id, const elliptic_curve256_algebra_ctx_t* algebra, const byte_vector_t& aad, const std::shared_ptr<paillier_private_key_t>& my_key, 
-        const std::shared_ptr<paillier_public_key_t>& paillier, const std::shared_ptr<ring_pedersen_private_t>& ring_pedersen) : 
-        _other_id(other_id), _algebra(algebra), _aad(aad), _my_paillier(my_key), _my_ring_pedersen(ring_pedersen), _other_paillier(paillier),
-        _ctx(BN_CTX_new(), BN_CTX_free), _my_mont(BN_MONT_CTX_new(), BN_MONT_CTX_free), _other_mont(BN_MONT_CTX_new(), BN_MONT_CTX_free)
+base_response_verifier::base_response_verifier(const uint64_t other_id, 
+                                               const elliptic_curve256_algebra_ctx_t* algebra, 
+                                               const byte_vector_t& aad, 
+                                               const std::shared_ptr<paillier_private_key_t>& my_key, 
+                                               const std::shared_ptr<paillier_public_key_t>& paillier, 
+                                               const std::shared_ptr<ring_pedersen_private_t>& ring_pedersen) : 
+        _other_id(other_id), 
+        _algebra(algebra), 
+        _aad(aad), 
+        _my_paillier(my_key), 
+        _my_ring_pedersen(ring_pedersen), 
+        _other_paillier(paillier),
+        _ctx(BN_CTX_new(), BN_CTX_free), 
+        _my_mont(BN_MONT_CTX_new(), BN_MONT_CTX_free), 
+        _other_mont(BN_MONT_CTX_new(), BN_MONT_CTX_free)
 {
     if (!_ctx || !_my_mont || !_other_mont)
         throw cosigner_exception(cosigner_exception::NO_MEM);
+
     BN_CTX_start(_ctx.get());
+
+    if (!BN_MONT_CTX_set(_my_mont.get(), _my_paillier->pub.n2, _ctx.get()))
+    {
+        LOG_ERROR("Failed to init montgomery context, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+    if (!BN_MONT_CTX_set(_other_mont.get(), _other_paillier->n2, _ctx.get()))
+    {
+        LOG_ERROR("Failed to init montgomery context, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+}
+
+base_response_verifier::~base_response_verifier()
+{
+    if (_ctx)
+    {
+        BN_CTX_end(_ctx.get());
+    }
+}
+
+batch_response_verifier::batch_response_verifier(
+        uint64_t other_id, 
+        const elliptic_curve256_algebra_ctx_t* algebra, 
+        const byte_vector_t& aad, 
+        const std::shared_ptr<paillier_private_key_t>& my_key, 
+        const std::shared_ptr<paillier_public_key_t>& paillier, 
+        const std::shared_ptr<ring_pedersen_private_t>& ring_pedersen) :
+    base_response_verifier(other_id, algebra, aad, my_key, paillier, ring_pedersen)
+{
+
     for (size_t i = 0; i < BATCH_STATISTICAL_SECURITY; i++)
     {
         _mta_ro[i] = BN_CTX_get(_ctx.get());
@@ -614,7 +670,7 @@ response_verifier::response_verifier(uint64_t other_id, const elliptic_curve256_
 
         if (!_mta_ro[i] || !_mta_B[i] || !_commitment_ro[i] || !_commitment_B[i])
         {
-            LOG_ERROR("Failed to alloc bignums");
+            LOG_ERROR("Failed to alloc batch bignums");
             throw cosigner_exception(cosigner_exception::NO_MEM);
         }
 
@@ -629,47 +685,17 @@ response_verifier::response_verifier(uint64_t other_id, const elliptic_curve256_
 
     if (!_pedersen_t_exp || !_pedersen_B)
     {
-        LOG_ERROR("Failed toalloc  bignums");
+        LOG_ERROR("Failed to alloc pedersen bignums");
         throw cosigner_exception(cosigner_exception::NO_MEM);
     }
     BN_one(_pedersen_B);
-    if (!BN_MONT_CTX_set(_my_mont.get(), _my_paillier->pub.n2, _ctx.get()))
-    {
-        LOG_ERROR("Failed to init montgomery context, error %lu", ERR_get_error());
-        throw cosigner_exception(cosigner_exception::NO_MEM);
-    }
-    if (!BN_MONT_CTX_set(_other_mont.get(), _other_paillier->n2, _ctx.get()))
-    {
-        LOG_ERROR("Failed to init montgomery context, error %lu", ERR_get_error());
-        throw cosigner_exception(cosigner_exception::NO_MEM);
-    }
+
 }
 
-response_verifier::response_verifier(response_verifier&& other) : 
-        _other_id(other._other_id), _algebra(other._algebra), _aad(std::move(other._aad)), _my_paillier(other._my_paillier), _my_ring_pedersen(other._my_ring_pedersen), _other_paillier(other._other_paillier), 
-        _ctx(std::move(other._ctx)), _my_mont(std::move(other._my_mont)), _other_mont(std::move(other._other_mont))
-{
-    memcpy(_mta_B, other._mta_B, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memset(other._mta_B, 0, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memcpy(_mta_ro, other._mta_ro, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memset(other._mta_ro, 0, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memcpy(_commitment_B, other._commitment_B, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memset(other._commitment_B, 0, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memcpy(_commitment_ro, other._commitment_ro, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    memset(other._commitment_ro, 0, sizeof(BIGNUM*) * BATCH_STATISTICAL_SECURITY);
-    _pedersen_t_exp = other._pedersen_t_exp;
-    other._pedersen_t_exp = NULL;
-    _pedersen_B = other._pedersen_B;
-    other._pedersen_B = NULL;
-}
-
-response_verifier::~response_verifier()
-{
-    if (_ctx)
-        BN_CTX_end(_ctx.get());
-}
-
-void response_verifier::process(const byte_vector_t& request, cmp_mta_message& response, const elliptic_curve_point& public_point)
+void batch_response_verifier::process(
+    const byte_vector_t& request, //this is mta_request from ecdsa_preprocessing_data, K sent by the other party
+    cmp_mta_message& response, 
+    const elliptic_curve_point& public_point)
 {
     bn_ctx_frame frame_guard(_ctx.get());
 
@@ -677,8 +703,12 @@ void response_verifier::process(const byte_vector_t& request, cmp_mta_message& r
     BIGNUM* mta_response = BN_CTX_get(_ctx.get());
     BIGNUM* commitment = BN_CTX_get(_ctx.get());
     if (!mta_request || !mta_response || !commitment ||
-        !BN_bin2bn(request.data(), request.size(), mta_request) || !BN_bin2bn(response.message.data(), response.message.size(), mta_response) || !BN_bin2bn(response.commitment.data(), response.commitment.size(), commitment))
+        !BN_bin2bn(request.data(), request.size(), mta_request) || 
+        !BN_bin2bn(response.message.data(), response.message.size(), mta_response) || 
+        !BN_bin2bn(response.commitment.data(), response.commitment.size(), commitment))
+    {
         throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
 
     BIGNUM* e = BN_CTX_get(_ctx.get());
     
@@ -759,7 +789,7 @@ void response_verifier::process(const byte_vector_t& request, cmp_mta_message& r
     process_ring_pedersen(e, proof);
 }
 
-void response_verifier::verify()
+void batch_response_verifier::verify()
 {
     bn_ctx_frame frame_guard(_ctx.get());
 
@@ -809,7 +839,7 @@ void response_verifier::verify()
     }
 }
 
-void response_verifier::process_paillier(const BIGNUM* e, const BIGNUM* request, BIGNUM* response, const BIGNUM* commitment, const mta_range_zkp& proof)
+void batch_response_verifier::process_paillier(const BIGNUM* e, const BIGNUM* request, BIGNUM* response, const BIGNUM* commitment, const mta_range_zkp& proof)
 {
     bn_ctx_frame frame_guard(_ctx.get());
 
@@ -828,21 +858,25 @@ void response_verifier::process_paillier(const BIGNUM* e, const BIGNUM* request,
         LOG_ERROR("response is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
+
     if (is_coprime_fast(proof.A, _my_paillier->pub.n, _ctx.get()) != 1)
     {
         LOG_ERROR("proof A is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
+
     if (is_coprime_fast(commitment, _other_paillier->n, _ctx.get()) != 1)
     {
         LOG_ERROR("commitment is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
+
     if (is_coprime_fast(proof.By, _other_paillier->n, _ctx.get()) != 1)
     {
         LOG_ERROR("proof By is not a valid ciphertext");
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
+
     uint8_t random[2 * BATCH_STATISTICAL_SECURITY];
     if (!RAND_bytes(random, 2 * BATCH_STATISTICAL_SECURITY * sizeof(uint8_t)))
     {
@@ -951,7 +985,7 @@ void response_verifier::process_paillier(const BIGNUM* e, const BIGNUM* request,
     }
 }
 
-void response_verifier::process_ring_pedersen(const BIGNUM* e, const mta_range_zkp& proof)
+void batch_response_verifier::process_ring_pedersen(const BIGNUM* e, const mta_range_zkp& proof)
 {
     bn_ctx_frame frame_guard(_ctx.get());
 
@@ -1045,6 +1079,326 @@ void response_verifier::process_ring_pedersen(const BIGNUM* e, const mta_range_z
         LOG_ERROR("Failed to calc ro product, error %lu", ERR_get_error());
         throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
+}
+
+void single_response_verifier::process_ring_pedersen(const BIGNUM* e, const mta_range_zkp& proof)
+{
+    bn_ctx_frame frame_guard(_ctx.get());
+
+    BIGNUM* tmp1 = BN_CTX_get(_ctx.get());
+    BIGNUM* tmp2 = BN_CTX_get(_ctx.get());
+
+    if (!tmp1 || !tmp2)
+    {
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+
+    auto rp_status = ring_pedersen_init_montgomery(&_my_ring_pedersen->pub, _ctx.get());
+    if (rp_status != RING_PEDERSEN_SUCCESS)
+    {
+        LOG_ERROR("Failed to init ring pedersen motgomery context, error %d", rp_status);
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+
+    // s^z1*t^z3 == E*S^e
+    // tmp1 = z1* lamda + z3   
+    if (!BN_mod_mul(tmp1, _my_ring_pedersen->lamda, proof.z1, _my_ring_pedersen->phi_n, _ctx.get()) || 
+        !BN_mod_add(tmp1, tmp1, proof.z3, _my_ring_pedersen->phi_n, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc lamda*z1+z3, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp1 = t^(lamda * z1 + z3)
+    if (!BN_mod_exp_mont(tmp1, _my_ring_pedersen->pub.t, tmp1, _my_ring_pedersen->pub.n, _ctx.get(), _my_ring_pedersen->pub.mont))
+    {
+        LOG_ERROR("Failed to calc t^(lamda * z1 + z3), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = S^e
+    if (!BN_mod_exp_mont(tmp2, proof.S, e, _my_ring_pedersen->pub.n, _ctx.get(), _my_ring_pedersen->pub.mont))
+    {
+        LOG_ERROR("Failed to calc S^e, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = tmp2 * E = E * S^e
+    if (!BN_mod_mul(tmp2, tmp2, proof.E, _my_ring_pedersen->pub.n, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc E * S^e), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    
+    //compare tmp1 and tmp2
+    if (0 != BN_cmp(tmp1, tmp2))
+    {
+        LOG_ERROR("s^z1*t^z3 != E * S^e)");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    // s^z2*t^z4 == F*T^e
+    // tmp1 = z2* lamda + z4
+    if (!BN_mod_mul(tmp1, _my_ring_pedersen->lamda, proof.z2, _my_ring_pedersen->phi_n, _ctx.get()) || 
+        !BN_mod_add(tmp1, tmp1, proof.z4, _my_ring_pedersen->phi_n, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc z2* lamda + z4, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp1 = t^(lamda * z2 + z4)
+    if (!BN_mod_exp_mont(tmp1, _my_ring_pedersen->pub.t, tmp1, _my_ring_pedersen->pub.n, _ctx.get(), _my_ring_pedersen->pub.mont))
+    {
+        LOG_ERROR("Failed to calc t^(lamda * z2 + z4), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = T^e
+    if (!BN_mod_exp_mont(tmp2, proof.T, e, _my_ring_pedersen->pub.n, _ctx.get(), _my_ring_pedersen->pub.mont))
+    {
+        LOG_ERROR("Failed to calc T^e, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = tmp2 * F = F * T^e
+    if (!BN_mod_mul(tmp2, tmp2, proof.F, _my_ring_pedersen->pub.n, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc F * T^e), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    
+    //compare tmp1 and tmp2
+    if (0 != BN_cmp(tmp1, tmp2))
+    {
+        LOG_ERROR("s^z2*t^z4 != F * T^e)");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+}
+
+void single_response_verifier::process_paillier(
+    const BIGNUM* e, 
+    const BIGNUM* request,         //C in the document, actually here passed encrypted K
+    const BIGNUM* response,        //D in the document, homomorphic calculation k*(x or gamma) + beta 
+    const BIGNUM* commitment,      //Y in the document, paillier encrypted my parties beta as commitment
+    const mta_range_zkp& proof)
+{
+    bn_ctx_frame frame_guard(_ctx.get());
+        
+    BIGNUM* tmp1 = BN_CTX_get(_ctx.get());
+    BIGNUM* tmp2 = BN_CTX_get(_ctx.get());
+    
+    if (!tmp1 || !tmp2)
+    {
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+
+    if (is_coprime_fast(response, _my_paillier->pub.n, _ctx.get()) != 1)
+    {
+        LOG_ERROR("response is not a valid ciphertext");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    if (is_coprime_fast(proof.A, _my_paillier->pub.n, _ctx.get()) != 1)
+    {
+        LOG_ERROR("proof A is not a valid ciphertext");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    if (is_coprime_fast(commitment, _other_paillier->n, _ctx.get()) != 1)
+    {
+        LOG_ERROR("commitment is not a valid ciphertext");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    if (is_coprime_fast(proof.By, _other_paillier->n, _ctx.get()) != 1)
+    {
+        LOG_ERROR("proof By is not a valid ciphertext");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    //============ 1st MTA verification ============
+    if (!BN_mod_exp_mont(tmp1, request, proof.z1, _my_paillier->pub.n2, _ctx.get(), _my_mont.get()))
+    {
+        LOG_ERROR("Failed to calc C^z1, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    long paillier_status = paillier_encrypt_openssl_internal(&_my_paillier->pub, tmp2, proof.w, proof.z2, _ctx.get());
+    if (paillier_status != PAILLIER_SUCCESS)
+    {
+        LOG_ERROR("Failed to encrypt z2 with my key during verify, error %ld", paillier_status);
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    
+    //tmp1 holds the result
+    if (!BN_mod_mul(tmp1, tmp1, tmp2, _my_paillier->pub.n2, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc C^z1 * enc(z2, w), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+   
+    //tmp2 = D^e
+    if (!BN_mod_exp_mont(tmp2, response, e, _my_paillier->pub.n2, _ctx.get(), _my_mont.get()))
+    {
+        LOG_ERROR("Failed to calc D^e, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = tmp2 * A = A * D^e
+    if (!BN_mod_mul(tmp2, tmp2, proof.A, _my_paillier->pub.n2, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc (A * D^e), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    
+    //compare tmp1 and tmp2
+    if (0 != BN_cmp(tmp1, tmp2))
+    {
+        LOG_ERROR("Failed check C^z1 * enc(z2, w) == A * D^e");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    //============ 2nd MTA verification ============ 
+    paillier_status = paillier_encrypt_openssl_internal(_other_paillier.get(), tmp1, proof.wy, proof.z2, _ctx.get());
+    if (paillier_status != PAILLIER_SUCCESS)
+    {
+        LOG_ERROR("Failed to encrypt z2 with my peer's key during verify, error %ld", paillier_status);
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = Y^e
+    if (!BN_mod_exp_mont(tmp2, commitment, e, _other_paillier->n2, _ctx.get(), _other_mont.get()))
+    {
+        LOG_ERROR("Failed to calc Y^e, error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    //tmp2 = tmp2 * By = By * Y^e
+    if (!BN_mod_mul(tmp2, proof.By, tmp2, _other_paillier->n2, _ctx.get()))
+    {
+        LOG_ERROR("Failed to calc (A * D^e), error %lu", ERR_get_error());
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    
+    //compare tmp1 and tmp2
+    if (0 != BN_cmp(tmp1, tmp2))
+    {
+        LOG_ERROR("Failed check enc(z2, w) == By * Y^e");
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+}
+
+void single_response_verifier::process(const byte_vector_t& request, cmp_mta_message& response, const elliptic_curve_point& public_point)
+{
+    bn_ctx_frame ctx_guard(_ctx.get());
+    
+    BIGNUM* mta_request = BN_CTX_get(_ctx.get());
+
+    if (!mta_request  || !BN_bin2bn(request.data(), request.size(), mta_request))
+    {
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }  
+
+
+    BIGNUM* mta_response = BN_CTX_get(_ctx.get()); //paillier encrypted minus my beta with my key
+    BIGNUM* commitment = BN_CTX_get(_ctx.get()); //paillier encrypted my parties beta with his key
+    if (!mta_response || !commitment ||
+        !BN_bin2bn(response.message.data(), response.message.size(), mta_response) || 
+        !BN_bin2bn(response.commitment.data(), response.commitment.size(), commitment))
+    {
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+    
+    BIGNUM* e = BN_CTX_get(_ctx.get());
+    
+    if (!e)
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    
+    mta_range_zkp proof(_ctx.get());
+    
+    deserialize_mta_range_zkp(response.proof, &_my_ring_pedersen->pub, _my_paillier.get(), _other_paillier.get(), proof);
+
+    // start with range check
+    if ((size_t)BN_num_bytes(proof.z1) > sizeof(elliptic_curve256_scalar_t) + MTA_ZKP_EPSILON_SIZE)
+    {
+        LOG_ERROR("player %lu z1 (%d bits) is out of range", _other_id, BN_num_bits(proof.z1));
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    if ((size_t)BN_num_bytes(proof.z2) > sizeof(elliptic_curve256_scalar_t) * BETA_HIDING_FACTOR + MTA_ZKP_EPSILON_SIZE)
+    {
+        LOG_ERROR("player %lu z2 (%d bits) is out of range", _other_id, BN_num_bits(proof.z2));
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    // sample e
+    uint8_t seed[SHA256_DIGEST_LENGTH];
+    genarate_mta_range_zkp_seed(response, proof, _aad, seed);
+    
+    response.commitment.clear();
+    response.proof.clear();
+
+    drng_t* rng = NULL;
+    if (drng_new(seed, SHA256_DIGEST_LENGTH, &rng) != DRNG_SUCCESS)
+    {
+        LOG_ERROR("Failed to create drng");
+        throw cosigner_exception(cosigner_exception::NO_MEM);
+    }
+    std::unique_ptr<drng_t, void (*)(drng_t*)> drng_guard(rng, drng_free);
+
+    const BIGNUM* q = _algebra->order_internal(_algebra);
+    elliptic_curve256_scalar_t val;
+    do
+    {
+        drng_read_deterministic_rand(rng, val, sizeof(elliptic_curve256_scalar_t));
+        if (!BN_bin2bn(val, sizeof(elliptic_curve256_scalar_t), e))
+        {
+            LOG_ERROR("Failed to load e, error %lu", ERR_get_error());
+            throw cosigner_exception(cosigner_exception::NO_MEM);
+        }
+    } while (BN_cmp(e, q) >= 0);
+    drng_guard.reset();
+
+    elliptic_curve256_point_t p1, p2;
+    
+    //scope for bin variable and calculate p1=q^z1
+    {
+        std::vector<uint8_t> bin(BN_num_bytes(proof.z1));
+        BN_bn2bin(proof.z1, bin.data());
+        auto status = _algebra->generator_mul_data(_algebra, bin.data(), bin.size(), &p1);
+        if (status != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
+        {
+            LOG_ERROR("Failed to calc g^z1, error %d", status);
+            throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        }
+    }
+
+    auto status = _algebra->point_mul(_algebra, &p2, &public_point.data, &val);
+    if (status != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
+    {
+        LOG_ERROR("Failed to calc X^e, error %d", status);
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    status = _algebra->add_points(_algebra, &p2, &proof.Bx, &p2);
+    if (status != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
+    {
+        LOG_ERROR("Failed to calc Bx*X^e, error %d", status);
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    // verify g^z1 == Bx*X^e
+    if (memcmp(p1, p2, sizeof(elliptic_curve256_point_t)) != 0)
+    {
+        LOG_ERROR("Failed to verify Bx*X^e == g^z1 for player %lu", _other_id);
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    process_paillier(e, 
+                     mta_request, 
+                     mta_response, 
+                     commitment, 
+                     proof);
+    process_ring_pedersen(e, proof);
 }
 
 }

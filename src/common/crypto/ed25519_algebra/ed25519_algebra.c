@@ -772,7 +772,7 @@ static elliptic_curve_algebra_status generator_mul(const elliptic_curve256_algeb
         return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
 
     (*res)[sizeof(ed25519_point_t)] = 0;
-    return ed25519_algebra_generator_mul_data(ctx->ctx, *exp, sizeof(elliptic_curve256_scalar_t), (ed25519_point_t*)res);;
+    return ed25519_algebra_generator_mul_data(ctx->ctx, *exp, sizeof(elliptic_curve256_scalar_t), (ed25519_point_t*)res);
 }
 
 static elliptic_curve_algebra_status add_points(const elliptic_curve256_algebra_ctx_t *ctx, elliptic_curve256_point_t *res, const elliptic_curve256_point_t *p1, const elliptic_curve256_point_t *p2)

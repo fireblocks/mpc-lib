@@ -117,9 +117,19 @@ cmp_mta_response cmp_ecdsa_signing_service::create_mta_response(ecdsa_signing_da
     return resp;
 }
 
-cmp_mta_deltas cmp_ecdsa_signing_service::mta_verify(ecdsa_signing_data& data, const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::string& uuid, const std::vector<uint8_t>& aad, const cmp_key_metadata& metadata,
-        const std::map<uint64_t, cmp_mta_responses>& mta_responses, size_t index, const auxiliary_keys& aux_keys, std::map<uint64_t, mta::response_verifier>& verifers)
+cmp_mta_deltas cmp_ecdsa_signing_service::mta_verify(
+    ecdsa_signing_data& data, //this block singing data
+    const elliptic_curve256_algebra_ctx_t* algebra, 
+    uint64_t my_id,
+    const std::string& uuid, 
+    const std::vector<uint8_t>& aad, //this party's aad
+    const cmp_key_metadata& metadata, //all parties public metadata (public share, paillier, rind pedersen)
+    const std::map<uint64_t, cmp_mta_responses>& mta_responses, //all responses from all parties
+    size_t index,           //this block (message) index
+    const auxiliary_keys& aux_keys, 
+    std::map<uint64_t, std::unique_ptr<mta::base_response_verifier> >& verifiers)
 {
+    //iterate over all responses from all signers
     for (auto it = mta_responses.begin(); it != mta_responses.end(); ++it)
     {
         if (it->first == my_id)
@@ -138,11 +148,11 @@ cmp_mta_deltas cmp_ecdsa_signing_service::mta_verify(ecdsa_signing_data& data, c
         }
         pub.gamma_commitment.clear();
         cmp_mta_message& gamma_mta = const_cast<cmp_mta_message&>(it->second.response[index].k_gamma_mta.at(my_id));
-        verifers.at(it->first).process(data.mta_request, gamma_mta, pub.GAMMA);
+        verifiers.at(it->first)->process(data.mta_request, gamma_mta, pub.GAMMA);
         auto alpha = mta::decrypt_mta_response(it->first, algebra, std::move(gamma_mta.message), aux_keys.paillier);
         throw_cosigner_exception(algebra->add_scalars(algebra, &data.delta.data, data.delta.data, sizeof(elliptic_curve256_scalar_t), alpha.data, sizeof(elliptic_curve256_scalar_t)));
         cmp_mta_message& x_mta = const_cast<cmp_mta_message&>(it->second.response[index].k_x_mta.at(my_id));
-        verifers.at(it->first).process(data.mta_request, x_mta, other.public_share);
+        verifiers.at(it->first)->process(data.mta_request, x_mta, other.public_share);
         alpha = mta::decrypt_mta_response(it->first, algebra, std::move(x_mta.message), aux_keys.paillier);
         throw_cosigner_exception(algebra->add_scalars(algebra, &data.chi.data, data.chi.data, sizeof(elliptic_curve256_scalar_t), alpha.data, sizeof(elliptic_curve256_scalar_t)));
         throw_cosigner_exception(algebra->add_points(algebra, &data.GAMMA.data, &data.GAMMA.data, &pub.GAMMA.data));
