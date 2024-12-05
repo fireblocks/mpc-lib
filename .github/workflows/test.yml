@@ -3,27 +3,6 @@ name: Run tests
 on: [push, pull_request]
 
 jobs:
-  test:
-    runs-on: ubuntu-20.04
-    strategy:
-      fail-fast: false
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt install -y build-essential uuid-dev libssl-dev libsecp256k1-dev
-      - name: Build
-        run: |
-          make -C src
-      - name: Build tests
-        run: |
-          make -C test
-      - name: Run Tests
-        run: |
-          make run-tests
-
   cmake-test:
     runs-on: ubuntu-20.04
     strategy:
