@@ -2,7 +2,7 @@
 #define __ZKP_CONSTRAINTS_INTERNAL_H__
 
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
-#include "../algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 
 // Parameter sizes for zero-knowledge proof optimizations
 
@@ -18,7 +18,9 @@ static inline CONSTEXPR uint32_t ZKPOK_OPTIM_L_SIZE(const uint32_t n_bitlen)
 
 static inline CONSTEXPR uint32_t ZKPOK_OPTIM_NU_SIZE(const uint32_t n_bitlen)
 {
-    return (ZKPOK_OPTIM_L_SIZE(n_bitlen) + 1) / 2;
+    (void)n_bitlen;
+    // always return 8 bytes (ie 64 bits)
+    return 8;
 }
 
 static inline CONSTEXPR uint32_t ZKPOK_OPTIM_NX_SIZE(const uint32_t n_bitlen)
@@ -33,7 +35,7 @@ static inline CONSTEXPR uint32_t ZKPOK_OPTIM_EPSILON_SIZE(const uint32_t n_bitle
 
 static inline CONSTEXPR uint32_t ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(const uint32_t n_bitlen)
 {
-    return ((2*ZKPOK_OPTIM_L_SIZE(n_bitlen) + ZKPOK_OPTIM_NU_SIZE(n_bitlen))*8);
+    return ((2 * ZKPOK_OPTIM_L_SIZE(n_bitlen) + ZKPOK_OPTIM_NU_SIZE(n_bitlen)) * 8);
 }
 
 static inline CONSTEXPR uint32_t ZKPOK_OPTIM_NLAMBDA_SIZE(const uint32_t n_bitlen)

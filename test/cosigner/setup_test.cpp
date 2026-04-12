@@ -6,7 +6,7 @@
 #include "test_common.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
 #include "cosigner/cmp_key_persistency.h"
-
+#include "cosigner/mpc_globals.h"
 #include <string.h>
 #include <stdarg.h>
 
@@ -48,11 +48,13 @@ std::string setup_persistency::dump_key(const std::string& key_id) const
 
 bool setup_persistency::key_exist(const std::string& key_id) const
 {
+    std::shared_lock lock(_mutex);
     return _keys.find(key_id) != _keys.end();
 }
 
 void setup_persistency::load_key(const std::string& key_id, cosigner_sign_algorithm& algorithm, elliptic_curve256_scalar_t& private_key) const
 {
+    std::shared_lock lock(_mutex);
     auto it = _keys.find(key_id);
     if (it == _keys.end())
         throw cosigner_exception(cosigner_exception::BAD_KEY);
@@ -67,6 +69,7 @@ const std::string setup_persistency::get_tenantid_from_keyid(const std::string& 
 
 void setup_persistency::load_key_metadata(const std::string& key_id, cmp_key_metadata& metadata, bool full_load) const
 {
+    std::shared_lock lock(_mutex);
     auto it = _keys.find(key_id);
     if (it == _keys.end())
         throw cosigner_exception(cosigner_exception::BAD_KEY);
@@ -75,6 +78,7 @@ void setup_persistency::load_key_metadata(const std::string& key_id, cmp_key_met
 
 void setup_persistency::load_auxiliary_keys(const std::string& key_id, auxiliary_keys& aux) const
 {
+    std::shared_lock lock(_mutex);
     auto it = _keys.find(key_id);
     if (it == _keys.end())
         throw cosigner_exception(cosigner_exception::BAD_KEY);
@@ -83,6 +87,7 @@ void setup_persistency::load_auxiliary_keys(const std::string& key_id, auxiliary
 
 void setup_persistency::store_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, uint64_t ttl)
 {
+    std::unique_lock lock(_mutex);
     auto& info = _keys[key_id];
     memcpy(info.private_key, private_key, sizeof(elliptic_curve256_scalar_t));
     info.algorithm = algorithm;
@@ -90,6 +95,7 @@ void setup_persistency::store_key(const std::string& key_id, cosigner_sign_algor
 
 void setup_persistency::store_key_metadata(const std::string& key_id, const cmp_key_metadata& metadata, bool allow_override)
 {
+    std::unique_lock lock(_mutex);
     auto& info = _keys[key_id];
     if (!allow_override && info.metadata)
         throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
@@ -99,24 +105,30 @@ void setup_persistency::store_key_metadata(const std::string& key_id, const cmp_
 
 void setup_persistency::store_auxiliary_keys(const std::string& key_id, const auxiliary_keys& aux)
 {
+    std::unique_lock lock(_mutex);
     auto& info = _keys[key_id];
     info.aux_keys = aux;
 }
 
 void setup_persistency::store_keyid_tenant_id(const std::string& key_id, const std::string& tenant_id) {}
 
-void setup_persistency::store_setup_data(const std::string& key_id, const setup_data& metadata)
+void setup_persistency::store_setup_data(const std::string& key_id, const setup_data& metadata, bool override)
 {
+    std::unique_lock lock(_mutex);
     _setup_data[key_id] = metadata;
 }
 
 void setup_persistency::load_setup_data(const std::string& key_id, setup_data& metadata)
 {
+    std::shared_lock lock(_mutex);
+    if (_setup_data.find(key_id) == _setup_data.end())
+        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     metadata = _setup_data[key_id];
 }
 
 void setup_persistency::store_setup_commitments(const std::string& key_id, const std::map<uint64_t, commitment>& commitments)
 {
+    std::unique_lock lock(_mutex);
     if (_commitments.find(key_id) != _commitments.end())
         throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
 
@@ -125,11 +137,13 @@ void setup_persistency::store_setup_commitments(const std::string& key_id, const
 
 void setup_persistency::load_setup_commitments(const std::string& key_id, std::map<uint64_t, commitment>& commitments)
 {
+    std::shared_lock lock(_mutex);
     commitments = _commitments[key_id];
 }
 
 void setup_persistency::delete_temporary_key_data(const std::string& key_id, bool delete_key)
 {
+    std::unique_lock lock(_mutex);
     _setup_data.erase(key_id);
     _commitments.erase(key_id);
     if (delete_key)
@@ -151,13 +165,17 @@ private:
     const std::string get_current_tenantid() const override {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
     void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override {assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {return data;}
+    byte_vector_t encrypt_for_player(const uint64_t id, const byte_vector_t& data, const std::optional<std::string>& verify_modulus = std::nullopt) const override {return data;}
     byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override  {return encrypted_data;}
     bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
     void on_start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const signing_type signature_type) override {}
     void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override {assert(0);}
+    void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const override {assert(0);}
+    void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const override {assert(0);}
     bool is_client_id(uint64_t player_id) const override {return false;}
-
+    void mark_key_setup_in_progress(const std::string& key_id) const override {}
+    void clear_key_setup_in_progress(const std::string& key_id) const override {}
+    void prepare_for_signing(const std::string& key_id, const std::string tx_id) override {}
     uint64_t _id;
 };
 
@@ -168,7 +186,11 @@ struct setup_info
     cmp_setup_service setup_service;
 };
 
-void create_secret(players_setup_info& players, cosigner_sign_algorithm type, const std::string& keyid, elliptic_curve256_point_t& pubkey)
+void create_secret(players_setup_info& players, 
+                   cosigner_sign_algorithm type, 
+                   const std::string& keyid, 
+                   elliptic_curve256_point_t& pubkey,
+                   uint32_t version)
 {
     std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> algebra(create_algebra(type), elliptic_curve256_algebra_ctx_free);
     const size_t PUBKEY_SIZE = algebra->point_size(algebra.get());
@@ -198,10 +220,10 @@ void create_secret(players_setup_info& players, cosigner_sign_algorithm type, co
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         setup_decommitment& decommitment = decommitments[i->first];
-        REQUIRE_NOTHROW(i->second->setup_service.store_setup_commitments(keyid, commitments, decommitment));
+        REQUIRE_NOTHROW(i->second->setup_service.store_setup_commitments(keyid, commitments, version, decommitment));
 
         setup_decommitment repeat_decommitment;
-        REQUIRE_THROWS_AS(i->second->setup_service.store_setup_commitments(keyid, commitments, repeat_decommitment), cosigner_exception);
+        REQUIRE_THROWS_AS(i->second->setup_service.store_setup_commitments(keyid, commitments, version, repeat_decommitment), cosigner_exception);
     }
     commitments.clear();
 
@@ -247,7 +269,7 @@ void create_secret(players_setup_info& players, cosigner_sign_algorithm type, co
 
         std::string repeat_public_key;
         cosigner_sign_algorithm repeat_algorithm;
-        REQUIRE_NOTHROW(i->second->setup_service.create_secret(keyid, paillier_large_factor_proofs, repeat_public_key, repeat_algorithm));
+        REQUIRE_THROWS_AS(i->second->setup_service.create_secret(keyid, paillier_large_factor_proofs, repeat_public_key, repeat_algorithm), cosigner_exception);
     }
     paillier_large_factor_proofs.clear();
     
@@ -258,7 +280,13 @@ void create_secret(players_setup_info& players, cosigner_sign_algorithm type, co
     }
 }
 
-void add_user(players_setup_info& old_players, players_setup_info& new_players, cosigner_sign_algorithm type, const std::string& old_keyid, const std::string& new_keyid, const elliptic_curve256_point_t& pubkey)
+void add_user(players_setup_info& old_players, 
+              players_setup_info& new_players, 
+              cosigner_sign_algorithm type, 
+              const std::string& old_keyid, 
+              const std::string& new_keyid, 
+              const elliptic_curve256_point_t& pubkey,
+              uint32_t version)
 {
     std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> algebra(create_algebra(type), elliptic_curve256_algebra_ctx_free);
     const size_t PUBKEY_SIZE = algebra->point_size(algebra.get());
@@ -297,7 +325,7 @@ void add_user(players_setup_info& old_players, players_setup_info& new_players, 
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         setup_decommitment& decommitment = decommitments[i->first];
-        REQUIRE_NOTHROW(i->second->setup_service.store_setup_commitments(new_keyid, commitments, decommitment));
+        REQUIRE_NOTHROW(i->second->setup_service.store_setup_commitments(new_keyid, commitments, version, decommitment));
     }
     commitments.clear();
 
@@ -334,7 +362,6 @@ void add_user(players_setup_info& old_players, players_setup_info& new_players, 
     }
 }
 
-#if 0
 TEST_CASE("setup") {
     SECTION("secp256k1") {
         uuid_t uid;
@@ -345,7 +372,7 @@ TEST_CASE("setup") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256K1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("secp256r1") {
@@ -357,7 +384,7 @@ TEST_CASE("setup") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256R1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256R1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("ed25519") {
@@ -369,7 +396,7 @@ TEST_CASE("setup") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, EDDSA_ED25519, keyid, pubkey);
+        create_secret(players, EDDSA_ED25519, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("stark") {
@@ -381,7 +408,7 @@ TEST_CASE("setup") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, ECDSA_STARK, keyid, pubkey);
+        create_secret(players, ECDSA_STARK, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("3/3") {
@@ -394,7 +421,7 @@ TEST_CASE("setup") {
         players[1];
         players[2];
         players[111];
-        create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256K1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 }
 
@@ -408,7 +435,7 @@ TEST_CASE("add_user") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256K1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         char new_keyid[37] = {0};
         uuid_generate_random(uid);
@@ -417,7 +444,7 @@ TEST_CASE("add_user") {
         new_players[11];
         new_players[12];
         new_players[13];
-        add_user(players, new_players, ECDSA_SECP256K1, keyid, new_keyid, pubkey);
+        add_user(players, new_players, ECDSA_SECP256K1, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("secp256r1") {
@@ -429,7 +456,7 @@ TEST_CASE("add_user") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256R1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256R1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         char new_keyid[37] = {0};
         uuid_generate_random(uid);
@@ -437,7 +464,7 @@ TEST_CASE("add_user") {
         players_setup_info new_players;
         new_players[11];
         new_players[12];
-        add_user(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey);
+        add_user(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("ed25519") {
@@ -449,7 +476,7 @@ TEST_CASE("add_user") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, EDDSA_ED25519, keyid, pubkey);
+        create_secret(players, EDDSA_ED25519, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         char new_keyid[37] = {0};
         uuid_generate_random(uid);
@@ -459,7 +486,7 @@ TEST_CASE("add_user") {
         new_players[12];
         new_players[13];
         new_players[14];
-        add_user(players, new_players, EDDSA_ED25519, keyid, new_keyid, pubkey);
+        add_user(players, new_players, EDDSA_ED25519, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("stark") {
@@ -471,7 +498,7 @@ TEST_CASE("add_user") {
         players_setup_info players;
         players[1];
         players[2];
-        create_secret(players, ECDSA_STARK, keyid, pubkey);
+        create_secret(players, ECDSA_STARK, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         char new_keyid[37] = {0};
         uuid_generate_random(uid);
@@ -479,7 +506,6 @@ TEST_CASE("add_user") {
         players_setup_info new_players;
         new_players[11];
         new_players[12];
-        add_user(players, new_players, ECDSA_STARK, keyid, new_keyid, pubkey);
+        add_user(players, new_players, ECDSA_STARK, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 }
-#endif

@@ -1,7 +1,7 @@
 #include "crypto/commitments/ring_pedersen.h"
 #include "crypto/drng/drng.h"
 #include "ring_pedersen_internal.h"
-#include "../algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 #include <assert.h>
 
 #include <openssl/bn.h>
@@ -43,7 +43,7 @@ ring_pedersen_status ring_pedersen_init_montgomery(ring_pedersen_public_t *pub, 
 ring_pedersen_status ring_pedersen_generate_key_pair(uint32_t key_len, ring_pedersen_public_t **pub, ring_pedersen_private_t **priv)
 {
     ring_pedersen_status ret = RING_PEDERSEN_UNKNOWN_ERROR;
-    BIGNUM *p, *q, *tmp, *n, *lamda, *phi, *r, *s, *t;
+    BIGNUM *p, *q, *tmp, *n, *lambda, *phi, *r, *s, *t;
     BN_CTX *ctx = NULL;
     ring_pedersen_public_t *local_pub = NULL;
     ring_pedersen_private_t *local_priv = NULL;
@@ -75,18 +75,18 @@ ring_pedersen_status ring_pedersen_generate_key_pair(uint32_t key_len, ring_pede
     q = BN_CTX_get(ctx);
     
     n = BN_new();
-    lamda = BN_new();
+    lambda = BN_new();
     phi = BN_new();
     s = BN_new();
     t = BN_new();
     
-    if (!p || !q || !tmp || !n || !phi || !lamda || !r || !s || !t)
+    if (!p || !q || !tmp || !n || !phi || !lambda || !r || !s || !t)
         goto cleanup;
 
     BN_set_flags(phi, BN_FLG_CONSTTIME);
     BN_set_flags(p, BN_FLG_CONSTTIME);
     BN_set_flags(q, BN_FLG_CONSTTIME);
-    BN_set_flags(lamda, BN_FLG_CONSTTIME);
+    BN_set_flags(lambda, BN_FLG_CONSTTIME);
 
     if (!BN_generate_prime_ex(p, key_len / 2, 1, NULL, NULL, NULL))
     {
@@ -121,7 +121,7 @@ ring_pedersen_status ring_pedersen_generate_key_pair(uint32_t key_len, ring_pede
         goto cleanup;
     }
         
-    if (!BN_rand_range(lamda, phi))
+    if (!BN_rand_range(lambda, phi))
     {
         goto cleanup;
     }
@@ -132,8 +132,7 @@ ring_pedersen_status ring_pedersen_generate_key_pair(uint32_t key_len, ring_pede
         if (!BN_rand_range(r, n))
         {
             goto cleanup;
-    }
-            
+        }  
     }
     while (!BN_gcd(tmp, r, n, ctx) || !BN_is_one(tmp));
 
@@ -142,7 +141,7 @@ ring_pedersen_status ring_pedersen_generate_key_pair(uint32_t key_len, ring_pede
         goto cleanup;
     }
         
-    if (!BN_mod_exp(s, t, lamda, n, ctx))
+    if (!BN_mod_exp(s, t, lambda, n, ctx))
     {
         goto cleanup;
     }
@@ -158,7 +157,7 @@ ring_pedersen_status ring_pedersen_generate_key_pair(uint32_t key_len, ring_pede
     local_priv->pub.s = s;
     local_priv->pub.t = t;
     local_priv->pub.mont = NULL;
-    local_priv->lamda = lamda;
+    local_priv->lambda = lambda;
     local_priv->phi_n = phi;
     
     local_pub = (ring_pedersen_public_t*)malloc(sizeof(ring_pedersen_public_t));
@@ -194,6 +193,10 @@ cleanup:
         {
             BN_clear(q);
         }
+        if (r)
+        {
+            BN_clear(r);
+        }
         BN_CTX_end(ctx);
         BN_CTX_free(ctx);
     }
@@ -206,10 +209,10 @@ cleanup:
             free(local_priv);
         }
             
-        ring_pedersen_free_public(local_pub); // as the public key uses duplication of p, s and t it's not sefficent just to free it
+        ring_pedersen_free_public(local_pub); // as the public key uses duplication of p, s and t it's not sufficient just to free it
         BN_free(n);
-        BN_free(lamda);
-        BN_free(phi);
+        BN_clear_free(lambda);
+        BN_clear_free(phi);
         BN_free(s);
         BN_free(t);
     }
@@ -399,7 +402,7 @@ const ring_pedersen_public_t* ring_pedersen_private_key_get_public(const ring_pe
 uint8_t *ring_pedersen_private_serialize(const ring_pedersen_private_t *priv, uint8_t *buffer, uint32_t buffer_len, uint32_t *real_buffer_len)
 {
     uint32_t needed_len = 0;
-    uint32_t lamda_len = 0;
+    uint32_t lambda_len = 0;
     uint32_t phi_len = 0;
     uint8_t *p = buffer;
     
@@ -408,9 +411,9 @@ uint8_t *ring_pedersen_private_serialize(const ring_pedersen_private_t *priv, ui
         return NULL;
     }
         
-    lamda_len = BN_num_bytes(priv->lamda);
+    lambda_len = BN_num_bytes(priv->lambda);
     phi_len = BN_num_bytes(priv->phi_n);
-    needed_len = ring_pedersen_public_serialize_internal(&priv->pub, NULL, 0) + sizeof(uint32_t) * 2 + lamda_len + phi_len;
+    needed_len = ring_pedersen_public_serialize_internal(&priv->pub, NULL, 0) + sizeof(uint32_t) * 2 + lambda_len + phi_len;
     if (real_buffer_len)
     {
         *real_buffer_len = needed_len;
@@ -422,10 +425,10 @@ uint8_t *ring_pedersen_private_serialize(const ring_pedersen_private_t *priv, ui
     }
         
     p += ring_pedersen_public_serialize_internal(&priv->pub, buffer, buffer_len);
-    *(uint32_t*)p = lamda_len;
+    *(uint32_t*)p = lambda_len;
     p += sizeof(uint32_t);
-    BN_bn2bin(priv->lamda, p);
-    p += lamda_len;
+    BN_bn2bin(priv->lambda, p);
+    p += lambda_len;
     *(uint32_t*)p = phi_len;
     p += sizeof(uint32_t);
     BN_bn2bin(priv->phi_n, p);
@@ -469,8 +472,12 @@ ring_pedersen_private_t *ring_pedersen_private_deserialize(const uint8_t *buffer
     }
         
     buffer_len -= sizeof(uint32_t);
-    priv->lamda = BN_bin2bn(p, len, NULL);
-    BN_set_flags(priv->lamda, BN_FLG_CONSTTIME);
+    priv->lambda = BN_bin2bn(p, len, NULL);
+    if (!priv->lambda)
+    {
+        goto cleanup;
+    }
+    BN_set_flags(priv->lambda, BN_FLG_CONSTTIME);
     p += len;
     buffer_len -= len;
 
@@ -483,14 +490,13 @@ ring_pedersen_private_t *ring_pedersen_private_deserialize(const uint8_t *buffer
         
     buffer_len -= sizeof(uint32_t);
     priv->phi_n = BN_bin2bn(p, len, NULL);
-    BN_set_flags(priv->phi_n, BN_FLG_CONSTTIME);
-    buffer_len -= len;
-    assert(buffer_len == 0);
-
-    if (!priv->lamda || !priv->phi_n)
+    if (!priv->phi_n)
     {
         goto cleanup;
     }
+    BN_set_flags(priv->phi_n, BN_FLG_CONSTTIME);
+    buffer_len -= len;
+    assert(buffer_len == 0);
         
     return priv;
 
@@ -510,7 +516,7 @@ void ring_pedersen_free_private(ring_pedersen_private_t *priv)
         BN_free(priv->pub.n);
         BN_free(priv->pub.s);
         BN_free(priv->pub.t);
-        BN_clear_free(priv->lamda);
+        BN_clear_free(priv->lambda);
         BN_clear_free(priv->phi_n);
         free(priv);
     }
@@ -735,8 +741,8 @@ zero_knowledge_proof_status ring_pedersen_parameters_zkp_generate(const ring_ped
         
         if (e & 0x01)
         {
-            // both z and lamda are in Z(phi(n)) so the add_quick version can be used
-            if (!BN_mod_add_quick(proof.z[i], proof.z[i], priv->lamda, priv->phi_n))
+            // both z and lambda are in Z(phi(n)) so the add_quick version can be used
+            if (!BN_mod_add_quick(proof.z[i], proof.z[i], priv->lambda, priv->phi_n))
             {
                 goto cleanup;
         }
@@ -998,7 +1004,7 @@ static ring_pedersen_status ring_pedersen_verify_commitment_internal(const ring_
     ring_pedersen_init_mont((ring_pedersen_public_t*)&priv->pub, ctx);
     
     status = RING_PEDERSEN_UNKNOWN_ERROR;
-    if (!BN_mod_mul(tmp, priv->lamda, x, priv->phi_n, ctx))
+    if (!BN_mod_mul(tmp, priv->lambda, x, priv->phi_n, ctx))
     {
         goto cleanup;
     }
@@ -1119,7 +1125,10 @@ ring_pedersen_status ring_pedersen_verify_batch_commitments_internal(const ring_
         goto cleanup;
     }
 
-    BN_one(B);
+    if (!BN_one(B))
+    {
+        goto cleanup;
+    }
 
     ring_pedersen_init_mont((ring_pedersen_public_t*)&priv->pub, ctx);
     status = RING_PEDERSEN_UNKNOWN_ERROR;
@@ -1133,7 +1142,7 @@ ring_pedersen_status ring_pedersen_verify_batch_commitments_internal(const ring_
         }
             
         gamma &= 0xffffffffff; // 40bits
-        if (!BN_mod_mul(tmp1, priv->lamda, x[i], priv->phi_n, ctx))
+        if (!BN_mod_mul(tmp1, priv->lambda, x[i], priv->phi_n, ctx))
         {
             goto cleanup;
         }
@@ -1230,7 +1239,10 @@ ring_pedersen_status ring_pedersen_verify_batch_commitments(const ring_pedersen_
     }
         
 
-    BN_one(B);
+    if (!BN_one(B))
+    {
+        goto cleanup;
+    }
 
     status = RING_PEDERSEN_UNKNOWN_ERROR;
     ring_pedersen_init_mont((ring_pedersen_public_t*) &priv->pub, ctx);
@@ -1253,7 +1265,7 @@ ring_pedersen_status ring_pedersen_verify_batch_commitments(const ring_pedersen_
             goto cleanup;
         }
             
-        if (!BN_mod_mul(tmp1, priv->lamda, tmp1, priv->phi_n, ctx))
+        if (!BN_mod_mul(tmp1, priv->lambda, tmp1, priv->phi_n, ctx))
         {
             goto cleanup;
         }

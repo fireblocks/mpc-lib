@@ -15,7 +15,7 @@ fi
 
 input_base_name=$(basename ${Dockerfile})
 prefix=$(echo ${input_base_name}| awk '{split($0,a,"."); print a[1]}')
-tag=$(echo ${input_base_name} | sed "s/^${prefix}\.//" )
+tag=$(echo ${input_base_name}| awk '{split($0,a,"."); print a[2]}')
 
 if [ x${prefix} != "xDockerfile" ]; then
     echo "Must Select a valid Dockerfile"
@@ -33,11 +33,10 @@ CURRENT_DIR=`pwd`
 
 cd ${SCRIPT_DIR}/..
 
-docker build --network=host -f ${CURRENT_DIR}/${Dockerfile} . -t $IMAGE_NAME
+docker build -f ${CURRENT_DIR}/${Dockerfile} . -t $IMAGE_NAME
 
 docker run \
     --rm \
-    --net=host \
     ${IMAGE_NAME} bash -c "mkdir build_${IMAGE_NAME};cd build_${IMAGE_NAME};cmake ..;make -j && make -j test"
 
 cd -

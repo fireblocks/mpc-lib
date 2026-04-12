@@ -37,7 +37,7 @@ COSIGNER_EXPORT uint8_t *ring_pedersen_public_serialize(const ring_pedersen_publ
 COSIGNER_EXPORT ring_pedersen_public_t *ring_pedersen_public_deserialize(const uint8_t *buffer, uint32_t buffer_len);
 COSIGNER_EXPORT void ring_pedersen_free_public(ring_pedersen_public_t *pub);
 
-COSIGNER_EXPORT const ring_pedersen_public_t* ring_pedersen_private_key_get_public(const ring_pedersen_private_t *priv); // the returned public pey must not be freed!
+COSIGNER_EXPORT const ring_pedersen_public_t* ring_pedersen_private_key_get_public(const ring_pedersen_private_t *priv); // the returned public key must not be freed!
 COSIGNER_EXPORT uint8_t *ring_pedersen_private_serialize(const ring_pedersen_private_t *priv, uint8_t *buffer, uint32_t buffer_len, uint32_t *real_buffer_len);
 COSIGNER_EXPORT ring_pedersen_private_t *ring_pedersen_private_deserialize(const uint8_t *buffer, uint32_t buffer_len);
 COSIGNER_EXPORT void ring_pedersen_free_private(ring_pedersen_private_t *priv);

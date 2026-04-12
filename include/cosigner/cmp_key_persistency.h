@@ -47,7 +47,7 @@ struct auxiliary_keys
 class COSIGNER_EXPORT cmp_key_persistency
 {
 public:
-    virtual ~cmp_key_persistency();
+    virtual ~cmp_key_persistency() {}
     virtual bool key_exist(const std::string& key_id) const = 0;
     // This function should throw cosigner_exception::BAD_KEY if key doesn't exist
     virtual void load_key(const std::string& key_id, cosigner_sign_algorithm& algorithm, elliptic_curve256_scalar_t& private_key) const = 0;

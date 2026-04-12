@@ -49,8 +49,8 @@ private:
     const std::string get_current_tenantid() const override {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
     void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override { assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {assert(0);}
-    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {assert(0);}
+    byte_vector_t encrypt_for_player(const uint64_t id, const byte_vector_t& data, const std::optional<std::string>& verify_modulus = std::nullopt) const override {return data;}
+    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {return encrypted_data;}
     bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
     void on_start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const signing_type signature_type) override {}
     void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override
@@ -58,7 +58,19 @@ private:
         for (auto i = flags.begin(); i != flags.end(); ++i)
             *i = _use_keccak ? EDDSA_KECCAK : 0;
     }
+    void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const override
+    {
+        for (auto i = info.begin(); i != info.end(); ++i)
+            i->flags = _use_keccak ? EDDSA_KECCAK : 0;
+    }
+    void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const override
+    {
+
+    }
     bool is_client_id(uint64_t player_id) const override {return CLIENT_ID == player_id;}
+    void mark_key_setup_in_progress(const std::string& key_id) const override {}
+    void clear_key_setup_in_progress(const std::string& key_id) const override {}
+    void prepare_for_signing(const std::string& key_id, const std::string tx_id) override {}
 
     const uint64_t _id;
     bool _use_keccak;
@@ -189,7 +201,7 @@ class server_persistency : public asymmetric_eddsa_cosigner_server::signing_pers
         data = it->second;
     }
 
-    void delete_temporary_signing_data(const std::string& txid) override
+    void delete_signing_data(const std::string& txid) override
     {
         std::unique_lock lock(_mutex);
         _signing_metadata.erase(txid);
@@ -204,7 +216,7 @@ class server_persistency : public asymmetric_eddsa_cosigner_server::signing_pers
 
 struct client_info
 {
-    client_info(uint64_t player_id, const cmp_key_persistency& key_persistency) : id(player_id), platform_service(player_id), service(platform_service, key_persistency, persistency) {}
+    client_info(uint64_t player_id, cmp_key_persistency& key_persistency) : id(player_id), platform_service(player_id), service(platform_service, key_persistency, persistency) {}
     uint64_t id;
     asymmetric_eddsa_platform platform_service;
     client_persistency persistency;
@@ -213,7 +225,7 @@ struct client_info
 
 struct server_info
 {
-    server_info(uint64_t id, const cmp_key_persistency& key_persistency) : platform_service(id), service(platform_service, key_persistency, persistency) {}
+    server_info(uint64_t id, cmp_key_persistency& key_persistency) : platform_service(id), service(platform_service, key_persistency, persistency) {}
     asymmetric_eddsa_platform platform_service;
     server_persistency persistency;
     asymmetric_eddsa_cosigner_server service;
@@ -276,7 +288,7 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
     }
 
     std::map<uint64_t, std::vector<eddsa_commitment>> R_commitments;
-    std::map<uint64_t, Rs_and_commitments> Rs_map;
+    std::map<uint64_t, std::vector<elliptic_curve_point>> Rs_map;
     for (auto i = servers.begin(); i != servers.end(); ++i)
     {
         auto& R_commitment = R_commitments[i->first];
@@ -284,22 +296,22 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
         REQUIRE_NOTHROW(i->second->service.eddsa_sign_offline(keyid, txid, data, "", players_str, players_ids, start_index, R_commitment, R));
 
         std::vector<eddsa_commitment> repeat_commitments;
-        Rs_and_commitments repeat_Rs;
+        std::vector<elliptic_curve_point> repeat_Rs;
         REQUIRE_THROWS_AS(i->second->service.eddsa_sign_offline(keyid, txid, data, "", players_str, players_ids, start_index, repeat_commitments, repeat_Rs), cosigner_exception);
 
         if (servers.size() == 1)
         {
             REQUIRE(R_commitment.size() == 0);
-            REQUIRE(R.Rs.size() == count);
+            REQUIRE(R.size() == count);
         }
         else
         {
             REQUIRE(R_commitment.size() == count);
-            REQUIRE(R.Rs.size() == 0);
+            REQUIRE(R.size() == 0);
         }
     }
 
-    std::map<uint64_t, Rs_and_commitments> server_Rs;
+    std::map<uint64_t, std::vector<elliptic_curve_point>> server_Rs;
     if (servers.size() == 1)
     {
         server_Rs = std::move(Rs_map);
@@ -310,9 +322,9 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
         for (auto i = servers.begin(); i != servers.end(); ++i)
         {
             auto& R = Rs_map[i->first];
-            REQUIRE_NOTHROW(i->second->service.decommit_r(txid, R_commitments, R.Rs));
-            Rs[i->first] = R.Rs;
-            REQUIRE(R.Rs.size() == count);
+            REQUIRE_NOTHROW(i->second->service.decommit_r(txid, R_commitments, R));
+            Rs[i->first] = R;
+            REQUIRE(R.size() == count);
 
             std::vector<elliptic_curve_point> repeat_Rs;
             REQUIRE_THROWS_AS(i->second->service.decommit_r(txid, R_commitments, repeat_Rs), cosigner_exception);
@@ -326,7 +338,7 @@ static void eddsa_sign(std::map<uint64_t, std::unique_ptr<server_info>>& servers
             REQUIRE(send_to_id == CLIENT_ID);
 
             uint64_t repeat_send_to_id;
-            Rs_and_commitments repeat_R;
+            std::vector<elliptic_curve_point> repeat_R;
             REQUIRE_THROWS_AS(i->second->service.broadcast_r(txid, Rs, repeat_R, repeat_send_to_id), cosigner_exception);
         }
     }
@@ -411,7 +423,7 @@ TEST_CASE("asymmetric_eddsa") {
         uuid_unparse(uid, keyid);
         players[CLIENT_ID];
         players[SERVER_ID];
-        create_secret(players, EDDSA_ED25519, keyid, pubkey);
+        create_secret(players, EDDSA_ED25519, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         std::map<uint64_t, std::unique_ptr<server_info>> services;
         services.emplace(SERVER_ID, std::make_unique<server_info>(SERVER_ID, players[SERVER_ID]));
@@ -428,7 +440,7 @@ TEST_CASE("asymmetric_eddsa") {
         players[CLIENT_ID];
         players[11];
         players[12];
-        create_secret(players, EDDSA_ED25519, keyid, pubkey);
+        create_secret(players, EDDSA_ED25519, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         std::map<uint64_t, std::unique_ptr<server_info>> services;
         for (auto i = players.begin(); i != players.end(); ++i)

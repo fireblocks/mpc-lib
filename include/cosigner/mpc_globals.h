@@ -18,9 +18,11 @@ constexpr int MPC_STARK_VERSION                                 = 7;
 constexpr int MPC_RAND_R_VERSION                                = 8;
 constexpr int MPC_ASYMMETRIC_EDDSA                              = 9;
 constexpr int MPC_REDISTRIBUTE_KEY                              = 10;
-constexpr int MPC_BAM_ECDSA                                     = 11;
+constexpr int MPC_EXTENDED_MTA                                  = 11;
+constexpr int MPC_BAM_ECDSA_BETA                                = 12;
+constexpr int MPC_BAM_ECDSA                                     = 13;
 
-constexpr int MPC_PROTOCOL_VERSION                              = MPC_REDISTRIBUTE_KEY;
+constexpr int MPC_PROTOCOL_VERSION                              = MPC_BAM_ECDSA;
 
 }
 }

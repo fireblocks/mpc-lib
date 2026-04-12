@@ -64,7 +64,7 @@ typedef struct
  * @return Status of the zero-knowledge proof generation.
  */
 COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const paillier_ciphertext_t *ciphertext, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len);
+    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const paillier_ciphertext_t *ciphertext, const uint8_t use_extended_seed, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len);
 
 /**
  * @brief Generates a Paillier encryption along with a range proof for the given exponent.
@@ -82,7 +82,7 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_
  * @return Status of the zero-knowledge proof generation.
  */
 COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_encrypt_with_exponent_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, paillier_with_range_proof_t **proof);
+    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const uint8_t use_extended_seed, paillier_with_range_proof_t **proof);
 
 /**
  * @brief Verifies a range proof for Paillier encryption with a known exponent.
@@ -96,30 +96,19 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_encrypt_with_ex
  * @param[in] aad_len Length of the additional authenticated data.
  * @param[in] public_point Pointer to the elliptic curve public point.
  * @param[in] proof Pointer to the Paillier ciphertext and range proof.
+ * @param[in] strict_ciphertext_length Verify that the ciphertext length is exactly same as n2 of the paillier
  *
  * @return Status of the zero-knowledge proof verification.
  */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pedersen_private_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_point_t *public_point, const paillier_with_range_proof_t *proof);
-
-/**
- * @brief Batch verification for range proofs of Paillier encryption with a known exponent.
- *
- * This function verifies multiple range proofs for Paillier ciphertexts with known public points in a batch.
- *
- * @param[in] ring_pedersen Pointer to the Ring Pedersen private parameters.
- * @param[in] paillier Pointer to the Paillier public key.
- * @param[in] algebra Pointer to the elliptic curve algebra context.
- * @param[in] aad Pointer to additional authenticated data.
- * @param[in] aad_len Length of the additional authenticated data.
- * @param[in] batch_size Number of proofs to verify.
- * @param[in] public_points Pointer to the array of elliptic curve public points.
- * @param[in] proofs Pointer to the array of Paillier ciphertexts and range proofs.
- *
- * @return Status of the zero-knowledge proof batch verification.
- */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_exponent_zkpok_batch_verify(const ring_pedersen_private_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, uint32_t batch_size, const elliptic_curve256_point_t *public_points, const paillier_with_range_proof_t *proofs);
+COSIGNER_EXPORT zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pedersen_private_t *ring_pedersen, 
+                                                                              const paillier_public_key_t *paillier, 
+                                                                              const elliptic_curve256_algebra_ctx_t *algebra, 
+                                                                              const uint8_t *aad, 
+                                                                              uint32_t aad_len, 
+                                                                              const elliptic_curve256_point_t *public_point, 
+                                                                              const paillier_with_range_proof_t *proof,
+                                                                              const uint8_t strict_ciphertext_length,
+                                                                              const uint8_t use_extended_seed);
 
 /**
  * @brief Generates a Diffie-Hellman range proof for a relationship involving Paillier encryption.
@@ -143,7 +132,7 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_exponent_zkpok_batch_ver
  */
 COSIGNER_EXPORT zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
     const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_scalar_t *a, const elliptic_curve256_scalar_t *b, const paillier_ciphertext_t *ciphertext, 
-    uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len);
+    const uint8_t use_extended_seed, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len);
 
 /**
  * @brief Generates a Paillier encryption along with a Diffie-Hellman range proof.
@@ -163,7 +152,7 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_gen
  * @return Status of the zero-knowledge proof generation.
  */
 COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_encrypt_with_diffie_hellman_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_scalar_t *a, const elliptic_curve256_scalar_t *b, paillier_with_range_proof_t **proof);
+    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_scalar_t *a, const elliptic_curve256_scalar_t *b, const uint8_t use_extended_seed, paillier_with_range_proof_t **proof);
 
 /**
  * @brief Verifies a Diffie-Hellman range proof for a relationship involving Paillier encryption.
@@ -179,11 +168,21 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_encrypt_with_di
  * @param[in] A Pointer to the first elliptic curve point.
  * @param[in] B Pointer to the second elliptic curve point.
  * @param[in] proof Pointer to the Paillier ciphertext and range proof.
+ * @param[in] strict_ciphertext_length Verify that the ciphertext length is exactly same as n2 of the paillier
  *
  * @return Status of the zero-knowledge proof verification.
  */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_pedersen_private_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_point_t *public_point, const elliptic_curve256_point_t *A, const elliptic_curve256_point_t *B, const paillier_with_range_proof_t *proof);
+COSIGNER_EXPORT zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_pedersen_private_t *ring_pedersen, 
+                                                                                    const paillier_public_key_t *paillier, 
+                                                                                    const elliptic_curve256_algebra_ctx_t *algebra, 
+                                                                                    const uint8_t *aad, 
+                                                                                    uint32_t aad_len, 
+                                                                                    const elliptic_curve256_point_t *public_point, 
+                                                                                    const elliptic_curve256_point_t *A,
+                                                                                    const elliptic_curve256_point_t *B, 
+                                                                                    const paillier_with_range_proof_t *proof,
+                                                                                    const uint8_t strict_ciphertext_length,
+                                                                                    const uint8_t use_extended_seed);
 
 /**
  * @brief Frees the memory associated with a Paillier ciphertext and range proof.
@@ -203,13 +202,21 @@ COSIGNER_EXPORT void range_proof_free_paillier_with_range_proof(paillier_with_ra
  * @param[in] ring_pedersen Pointer to the Ring Pedersen public parameters.
  * @param[in] aad Pointer to additional authenticated data.
  * @param[in] aad_len Length of the additional authenticated data.
+ * @param[in] use_extended_seed Use extended
  * @param[out] serialized_proof Pointer to the buffer to store the serialized proof.
  * @param[in] proof_len Length of the proof buffer.
  * @param[out] real_proof_len Pointer to store the actual length of the generated proof.
  *
  * @return Status of the zero-knowledge proof generation.
  */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(const paillier_private_key_t *priv, const ring_pedersen_public_t *ring_pedersen, const uint8_t *aad, uint32_t aad_len, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len);
+COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(const paillier_private_key_t *priv, 
+                                                                                            const ring_pedersen_public_t *ring_pedersen, 
+                                                                                            const uint8_t *aad, 
+                                                                                            uint32_t aad_len, 
+                                                                                            const uint8_t use_extended_seed,
+                                                                                            uint8_t *serialized_proof, 
+                                                                                            uint32_t proof_len, 
+                                                                                            uint32_t *real_proof_len);
 
 /**
  * @brief Verifies a range proof for Paillier encryption with large factors.
@@ -220,17 +227,24 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_large_factors_z
  * @param[in] ring_pedersen Pointer to the Ring Pedersen private parameters.
  * @param[in] aad Pointer to additional authenticated data.
  * @param[in] aad_len Length of the additional authenticated data.
+ * @param[in] use_extended_seed Use extended version of the seed
  * @param[in] serialized_proof Pointer to the serialized proof data.
  * @param[in] proof_len Length of the serialized proof.
  *
  * @return Status of the zero-knowledge proof verification.
  */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_verify(const paillier_public_key_t *pub, const ring_pedersen_private_t *ring_pedersen, const uint8_t *aad, uint32_t aad_len, const uint8_t *serialized_proof, uint32_t proof_len);
+COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_verify(const paillier_public_key_t *pub, 
+                                                                                          const ring_pedersen_private_t *ring_pedersen, 
+                                                                                          const uint8_t *aad, 
+                                                                                          uint32_t aad_len, 
+                                                                                          const uint8_t use_extended_seed,
+                                                                                          const uint8_t *serialized_proof, 
+                                                                                          uint32_t proof_len);
 
 /**
  * @brief return minimal size of "d" prime required for range_proof_paillier_large_factors_quadratic_zkp_generate()
  *
- * This function requires initialized public key and returnes the minimal size in bits required for the "d" safe prime 
+ * This function requires initialized public key and returns the minimal size in bits required for the "d" safe prime 
  *
  * @param[in] pub Pointer to the Paillier public key.
  *
@@ -246,7 +260,7 @@ COSIGNER_EXPORT uint32_t range_proof_paillier_large_factors_quadratic_zkp_comput
  * @param[in] priv Pointer to the Paillier private key.
  * @param[in] aad Pointer to additional authenticated data.
  * @param[in] aad_len Length of the additional authenticated data.
- * @param[in] d_prime Optional large safe prime. If NULL is geven will be generated inside
+ * @param[in] d_prime Optional large safe prime. If NULL is given will be generated inside
  * @param[in] d_prime_len Length of d_prime
  * @param[out] serialized_proof Pointer to the buffer to store the serialized proof.
  * @param[in] proof_len Length of the proof buffer.
@@ -299,14 +313,15 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_large_factors_q
  *
  * @return Status of the zero-knowledge proof generation.
  */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_generate(const damgard_fujisaki_public_t *damgard_fujisaki, 
-                                                                                                    const paillier_commitment_private_key_t *paillier, 
-                                                                                                    const elliptic_curve256_algebra_ctx_t *algebra,
-                                                                                                    const uint8_t *aad, 
-                                                                                                    const uint32_t aad_len, 
-                                                                                                    const uint8_t* secret, 
-                                                                                                    const uint32_t secret_len, 
-                                                                                                    paillier_with_range_proof_t **proof);
+COSIGNER_EXPORT zero_knowledge_proof_status paillier_commitment_encrypt_with_exponent_zkpok_generate(const damgard_fujisaki_public_t *damgard_fujisaki, 
+                                                                                                     const paillier_commitment_private_key_t *paillier, 
+                                                                                                     const elliptic_curve256_algebra_ctx_t *algebra,
+                                                                                                     const uint8_t *aad, 
+                                                                                                     const uint32_t aad_len, 
+                                                                                                     const uint8_t* secret, 
+                                                                                                     const uint32_t secret_len, 
+                                                                                                     const uint8_t use_extended_seed,
+                                                                                                     paillier_with_range_proof_t **proof);
 
 
 
@@ -316,7 +331,7 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_commitment_expo
  * This function verifies the provided range proof for a small group Paillier ciphertext with a known public point.
  *
  * @param[in] damgard_fujisaki Pointer to the Damgård-Fujisaki private parameters.
- * @param[in] paillier Pointer to the Paillier commitement public key.
+ * @param[in] paillier Pointer to the Paillier commitment public key.
  * @param[in] algebra Pointer to the elliptic curve algebra context.
  * @param[in] aad Pointer to additional authenticated data.
  * @param[in] aad_len Length of the additional authenticated data.
@@ -325,13 +340,14 @@ COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_commitment_expo
  *
  * @return Status of the zero-knowledge proof verification.
  */
-COSIGNER_EXPORT zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verify(const damgard_fujisaki_private_t* damgard_fujisaki, 
-                                                                                                  const paillier_commitment_public_key_t* paillier, 
-                                                                                                  const elliptic_curve256_algebra_ctx_t* algebra,
-                                                                                                  const uint8_t* aad, 
-                                                                                                  const uint32_t aad_len, 
-                                                                                                  const elliptic_curve256_point_t* public_point, 
-                                                                                                  const const_paillier_with_range_proof_t* proof);
+COSIGNER_EXPORT zero_knowledge_proof_status paillier_commitment_exponent_zkpok_verify(const damgard_fujisaki_private_t* damgard_fujisaki, 
+                                                                                      const paillier_commitment_public_key_t* paillier, 
+                                                                                      const elliptic_curve256_algebra_ctx_t* algebra,
+                                                                                      const uint8_t* aad, 
+                                                                                      const uint32_t aad_len, 
+                                                                                      const elliptic_curve256_point_t* public_point, 
+                                                                                      const const_paillier_with_range_proof_t* proof,
+                                                                                      const uint8_t use_extended_seed);
 
 #ifdef __cplusplus
 }

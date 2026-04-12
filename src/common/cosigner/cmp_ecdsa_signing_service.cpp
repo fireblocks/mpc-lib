@@ -5,7 +5,7 @@
 #include "crypto/zero_knowledge_proof/diffie_hellman_log.h"
 #include "crypto/zero_knowledge_proof/range_proofs.h"
 #include "logging/logging_t.h"
-
+#include "cosigner/mpc_globals.h"
 #include <openssl/sha.h>
 
 #include <inttypes.h>
@@ -39,10 +39,10 @@ cmp_mta_request cmp_ecdsa_signing_service::create_mta_request(ecdsa_preprocessin
     cmp_mta_request msg;
     throw_cosigner_exception(algebra->generator_mul(algebra, &msg.A.data, &data.a.data));
     throw_cosigner_exception(algebra->generator_mul(algebra, &msg.B.data, &data.b.data));
-    elliptic_curve256_scalar_t tmp;
-    throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp, data.a.data, sizeof(elliptic_curve256_scalar_t), data.b.data, sizeof(elliptic_curve256_scalar_t)));
-    throw_cosigner_exception(algebra->add_scalars(algebra, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), data.k.data, sizeof(elliptic_curve256_scalar_t)));
-    throw_cosigner_exception(algebra->generator_mul(algebra, &msg.Z.data, &tmp));
+    elliptic_curve_scalar tmp;
+    throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp.data, data.a.data, sizeof(elliptic_curve256_scalar_t), data.b.data, sizeof(elliptic_curve256_scalar_t)));
+    throw_cosigner_exception(algebra->add_scalars(algebra, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), data.k.data, sizeof(elliptic_curve256_scalar_t)));
+    throw_cosigner_exception(algebra->generator_mul(algebra, &msg.Z.data, &tmp.data));
     msg.mta = mta::request(my_id, algebra, data.k, data.gamma, data.a, data.b, aad, paillier, metadata.players_info, msg.mta_proofs, data.G_proofs);
 
     data.mta_request = msg.mta.message;
@@ -95,7 +95,8 @@ cmp_mta_response cmp_ecdsa_signing_service::create_mta_response(
     const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, 
     size_t index, 
     const elliptic_curve_scalar& key, 
-    const auxiliary_keys& aux_keys)
+    const auxiliary_keys& aux_keys,
+    const uint32_t version)
 {
     cmp_mta_response resp;
     resp.GAMMA = data.GAMMA;
@@ -110,10 +111,10 @@ cmp_mta_response cmp_ecdsa_signing_service::create_mta_response(
             continue;
         const auto& other = metadata.players_info.at(req_it->first);
         auto& gamma_mta = resp.k_gamma_mta[req_it->first];
-        auto beta = mta::answer_mta_request(algebra, req_it->second[index].mta, data.gamma.data, sizeof(elliptic_curve256_scalar_t), aad, aux_keys.paillier, other.paillier, other.ring_pedersen, gamma_mta);
+        auto beta = mta::answer_mta_request(algebra, req_it->second[index].mta, data.gamma.data, sizeof(elliptic_curve256_scalar_t), aad, aux_keys.paillier, other.paillier, other.ring_pedersen, version, gamma_mta);
         throw_cosigner_exception(algebra->sub_scalars(algebra, &data.delta.data, data.delta.data, sizeof(elliptic_curve256_scalar_t), beta.data, sizeof(elliptic_curve256_scalar_t)));
         auto& x_mta = resp.k_x_mta[req_it->first];
-        beta = mta::answer_mta_request(algebra, req_it->second[index].mta, key.data, sizeof(elliptic_curve256_scalar_t), aad, aux_keys.paillier, other.paillier, other.ring_pedersen, x_mta);
+        beta = mta::answer_mta_request(algebra, req_it->second[index].mta, key.data, sizeof(elliptic_curve256_scalar_t), aad, aux_keys.paillier, other.paillier, other.ring_pedersen, version, x_mta);
         throw_cosigner_exception(algebra->sub_scalars(algebra, &data.chi.data, data.chi.data, sizeof(elliptic_curve256_scalar_t), beta.data, sizeof(elliptic_curve256_scalar_t)));
         auto& pub = data.public_data[req_it->first];
         pub.A = req_it->second[index].A;
@@ -126,7 +127,7 @@ cmp_mta_response cmp_ecdsa_signing_service::create_mta_response(
 }
 
 cmp_mta_deltas cmp_ecdsa_signing_service::verify_block_and_get_delta(
-    ecdsa_preprocessing_data& data, //this block singing data
+    ecdsa_preprocessing_data& data, //this block signing data
     const elliptic_curve256_algebra_ctx_t* algebra, 
     uint64_t my_id,
     const std::string& uuid, 
@@ -135,6 +136,7 @@ cmp_mta_deltas cmp_ecdsa_signing_service::verify_block_and_get_delta(
     const std::map<uint64_t, cmp_mta_responses>& mta_responses, //all responses from all parties
     size_t index,           //this block (message) index
     const auxiliary_keys& aux_keys, 
+    const uint32_t version,
     std::map<uint64_t, std::unique_ptr<mta::base_response_verifier> >& verifiers)
 {
     //iterate over all responses from all signers
@@ -143,7 +145,7 @@ cmp_mta_deltas cmp_ecdsa_signing_service::verify_block_and_get_delta(
         if (it->first == my_id)
             continue;
 
-        //other partie parameters
+        //other party's parameters
         const auto& other = metadata.players_info.at(it->first);
         auto other_aad = build_aad(uuid, it->first, metadata.seed);
         auto& pub = data.public_data.at(it->first);
@@ -162,13 +164,16 @@ cmp_mta_deltas cmp_ecdsa_signing_service::verify_block_and_get_delta(
                                               (uint32_t)proof_for_me.size()};
 
         //verify "log" proof
+        const uint8_t strict_ciphertext_length = (version >= fireblocks::common::cosigner::MPC_EXTENDED_MTA) ? 1 : 0;
         auto status = range_proof_exponent_zkpok_verify(aux_keys.ring_pedersen.get(), //my secret ring pedersen params 
-                                                        other.paillier.get(),         //other partie's public paillier
+                                                        other.paillier.get(),         //other party's public paillier
                                                         algebra, 
                                                         other_aad.data(),
                                                         other_aad.size(), 
                                                         &pub.GAMMA.data, 
-                                                        &proof);
+                                                        &proof,
+                                                        strict_ciphertext_length,
+                                                        /*use_extended_seed=*/0);
         if (status != ZKP_SUCCESS)
         {
             LOG_ERROR("Failed to verify gamma log proof from player %" PRIu64 " block %lu, error %d", it->first, index, status);
@@ -194,10 +199,10 @@ cmp_mta_deltas cmp_ecdsa_signing_service::verify_block_and_get_delta(
     diffie_hellman_log_public_data_t pub;
     throw_cosigner_exception(algebra->generator_mul(algebra, &pub.A, &data.a.data));
     throw_cosigner_exception(algebra->generator_mul(algebra, &pub.B, &data.b.data));
-    elliptic_curve256_scalar_t tmp;
-    throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp, data.a.data, sizeof(elliptic_curve256_scalar_t), data.b.data, sizeof(elliptic_curve256_scalar_t)));
-    throw_cosigner_exception(algebra->add_scalars(algebra, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), data.k.data, sizeof(elliptic_curve256_scalar_t)));
-    throw_cosigner_exception(algebra->generator_mul(algebra, &pub.C, &tmp));
+    elliptic_curve_scalar tmp;
+    throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp.data, data.a.data, sizeof(elliptic_curve256_scalar_t), data.b.data, sizeof(elliptic_curve256_scalar_t)));
+    throw_cosigner_exception(algebra->add_scalars(algebra, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), data.k.data, sizeof(elliptic_curve256_scalar_t)));
+    throw_cosigner_exception(algebra->generator_mul(algebra, &pub.C, &tmp.data));
     memcpy(pub.X, delta.DELTA.data, sizeof(elliptic_curve256_point_t));
     diffie_hellman_log_zkp_t proof;
     throw_cosigner_exception(diffie_hellman_log_zkp_generate(algebra, aad.data(), aad.size(), &data.GAMMA.data, &data.k.data, &data.a.data, &data.b.data, &pub, &proof));

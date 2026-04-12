@@ -1,7 +1,7 @@
 default:
-  image: docker.io/ubuntu:20.04
+  image: registry.gitlab.com/fireblocks/external-docker-images/ubuntu:22.04
   tags:
-    - dev-common-runner
+    - kub-builders
   before_script:
     - apt update
     - DEBIAN_FRONTEND=noninteractive apt install -y build-essential cmake pkg-config uuid-dev libssl-dev libsecp256k1-dev

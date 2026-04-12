@@ -8,6 +8,7 @@
 #include "cosigner/cosigner_exception.h"
 #include "cosigner/cmp_signature_preprocessed_data.h"
 #include "cosigner/cmp_offline_refresh_service.h"
+#include "cosigner/bam_ecdsa_cosigner.h"
 #include "test_common.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
 #include "crypto/GFp_curve_algebra/GFp_curve_algebra.h"
@@ -56,7 +57,7 @@ private:
     const std::string get_current_tenantid() const override {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
     void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override {assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {return data;}
+    byte_vector_t encrypt_for_player(const uint64_t id, const byte_vector_t& data, const std::optional<std::string>& verify_modulus = std::nullopt) const override {return data;}
     byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {return encrypted_data;}
     bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
     void on_start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const signing_type signature_type) override {}
@@ -65,7 +66,22 @@ private:
         for (auto i = flags.begin(); i != flags.end(); ++i)
             *i = _positive_r ? POSITIVE_R : 0;
     }
+    virtual void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const override
+    {
+
+    }
+
+    virtual void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const override
+    {
+        if (metadata != "")
+        {
+            info[0].flags = POSITIVE_R;
+        }
+    }
     bool is_client_id(uint64_t player_id) const override {return false;}
+    void mark_key_setup_in_progress(const std::string& key_id) const override {}
+    void clear_key_setup_in_progress(const std::string& key_id) const override {}
+    void prepare_for_signing(const std::string& key_id, const std::string tx_id) override {}
 
     const uint64_t _id;
     bool _positive_r;
@@ -269,7 +285,12 @@ struct offline_siging_info
     cmp_ecdsa_offline_signing_service signing_service;
 };
 
-static void ecdsa_preprocess(std::map<uint64_t, std::unique_ptr<offline_siging_info>>& services, const std::string& keyid, uint32_t start, uint32_t count, uint32_t total)
+static void ecdsa_preprocess(std::map<uint64_t, std::unique_ptr<offline_siging_info>>& services, 
+                             const std::string& keyid, 
+                             uint32_t start, 
+                             uint32_t count, 
+                             uint32_t total,
+                             uint32_t version)
 {
     uuid_t uid;
     char request[37] = {0};
@@ -295,10 +316,10 @@ static void ecdsa_preprocess(std::map<uint64_t, std::unique_ptr<offline_siging_i
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         auto& response = mta_responses[i->first];
-        REQUIRE_NOTHROW(i->second->signing_service.offline_mta_response(request, mta_requests, response));
+        REQUIRE_NOTHROW(i->second->signing_service.offline_mta_response(request, mta_requests, version, response));
 
         cmp_mta_responses repeat_response;
-        REQUIRE_THROWS_AS(i->second->signing_service.offline_mta_response(request, mta_requests, repeat_response), cosigner_exception);
+        REQUIRE_THROWS_AS(i->second->signing_service.offline_mta_response(request, mta_requests, version, repeat_response), cosigner_exception);
     }
     mta_requests.clear();
 
@@ -472,7 +493,7 @@ struct preprocess_thread_data
 static void* preprocess_thread(void* arg)
 {
     preprocess_thread_data* param = (preprocess_thread_data*)arg;
-    ecdsa_preprocess(*param->services, param->keyid, param->index * BLOCK_SIZE, BLOCK_SIZE, param->total_count);
+    ecdsa_preprocess(*param->services, param->keyid, param->index * BLOCK_SIZE, BLOCK_SIZE, param->total_count, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     return NULL;
 }
 
@@ -491,7 +512,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         players.clear();
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256K1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         std::map<uint64_t, std::unique_ptr<offline_siging_info>> services;
         for (auto i = players.begin(); i != players.end(); ++i)
@@ -501,7 +522,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         }
     
         auto before = Clock::now();
-        ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
+        ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         auto after = Clock::now();
         std::cout << "ECDSA preprocessing took: " << std::chrono::duration_cast<std::chrono::milliseconds>(after - before).count() << " ms" << std::endl;
     
@@ -559,7 +580,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         players.clear();
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256K1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         std::map<uint64_t, std::unique_ptr<offline_siging_info>> services;
         for (auto i = players.begin(); i != players.end(); ++i)
@@ -604,7 +625,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         players.clear();
         players[11];
         players[12];
-        create_secret(players, ECDSA_SECP256R1, keyid, pubkey);
+        create_secret(players, ECDSA_SECP256R1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         std::map<uint64_t, std::unique_ptr<offline_siging_info>> services;
         for (auto i = players.begin(); i != players.end(); ++i)
@@ -613,7 +634,7 @@ TEST_CASE("cmp_offline_ecdsa") {
             services.emplace(i->first, std::move(info));
         }
     
-        ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
+        ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         ecdsa_sign(services, ECDSA_SECP256R1, keyid, 0, 1, pubkey, chaincode, {path});
         
         char new_keyid[37] = {0};
@@ -623,14 +644,14 @@ TEST_CASE("cmp_offline_ecdsa") {
         new_players[21];
         new_players[22];
         new_players[23];
-        add_user(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey);
+        add_user(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         std::map<uint64_t, std::unique_ptr<offline_siging_info>> new_services;
         for (auto i = new_players.begin(); i != new_players.end(); ++i)
         {
             auto info = std::make_unique<offline_siging_info>(i->first, i->second);
             new_services.emplace(i->first, std::move(info));
         }
-        ecdsa_preprocess(new_services, new_keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
+        ecdsa_preprocess(new_services, new_keyid, 0, BLOCK_SIZE, BLOCK_SIZE, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         ecdsa_sign(new_services, ECDSA_SECP256R1, new_keyid, 0, 1, pubkey, chaincode, {path});
     }
 
@@ -641,7 +662,7 @@ TEST_CASE("cmp_offline_ecdsa") {
         players.clear();
         players[21];
         players[22];
-        create_secret(players, ECDSA_STARK, keyid, pubkey);
+        create_secret(players, ECDSA_STARK, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
 
         std::map<uint64_t, std::unique_ptr<offline_siging_info>> services;
         for (auto i = players.begin(); i != players.end(); ++i)
@@ -650,7 +671,7 @@ TEST_CASE("cmp_offline_ecdsa") {
             services.emplace(i->first, std::move(info));
         }
     
-        ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE);
+        ecdsa_preprocess(services, keyid, 0, BLOCK_SIZE, BLOCK_SIZE, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         ecdsa_sign(services, ECDSA_STARK, keyid, 0, 1, pubkey, chaincode, {path});
     }
 }

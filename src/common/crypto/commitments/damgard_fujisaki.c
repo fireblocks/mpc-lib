@@ -2,8 +2,8 @@
 #include "crypto/commitments/damgard_fujisaki.h"
 #include "crypto/zero_knowledge_proof/range_proofs.h"
 #include "crypto/drng/drng.h"
-#include "../algebra_utils/algebra_utils.h"
-#include "../algebra_utils/status_convert.h"
+#include "crypto/algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/status_convert.h"
 #include "../zero_knowledge_proof/zkp_constants_internal.h"
 #include <string.h>
 #include <assert.h>
@@ -61,15 +61,15 @@ static inline void damgard_fujisaki_cleanup_private(damgard_fujisaki_private_t* 
 {
     if (priv)
     {
-        if (priv->lamda)
+        if (priv->lambda)
         {
             for (uint32_t i = 0; i < priv->pub.dimension; ++i)
             {
-                BN_clear_free(priv->lamda[i]);
-                priv->lamda[i] = NULL;
+                BN_clear_free(priv->lambda[i]);
+                priv->lambda[i] = NULL;
             }
-            free(priv->lamda);
-            priv->lamda = NULL;
+            free(priv->lambda);
+            priv->lambda = NULL;
         }
         BN_clear_free(priv->phi_n);
         priv->phi_n = NULL;
@@ -205,7 +205,7 @@ static ring_pedersen_status damgard_fujisaki_create_commitment_with_private_inte
         
     for (uint32_t i = 0; i < batch_size; ++i) 
     {
-        if (!BN_mod_mul(tmp2, priv->lamda[i], x[i], priv->phi_n, ctx))
+        if (!BN_mod_mul(tmp2, priv->lambda[i], x[i], priv->phi_n, ctx))
         {
             goto cleanup;
         }
@@ -355,14 +355,14 @@ static ring_pedersen_status damgard_fujisaki_generate_key_inner(const uint32_t k
 
     for (uint32_t i = 0; i < dimension; ++i) 
     {
-        // generate labda which will have twice security bits of the RSA key
-        if (!BN_rand(priv->lamda[i], 2 * get_min_secure_exponent_size((uint32_t)BN_num_bits(priv->pub.n)), BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
+        // generate lambda which will have twice security bits of the RSA key
+        if (!BN_rand(priv->lambda[i], 2 * get_min_secure_exponent_size((uint32_t)BN_num_bits(priv->pub.n)), BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
         {
             goto cleanup;
         }
             
-        //s[i] = t ^ lamda[i]
-        if (!BN_mod_exp(priv->pub.s[i], priv->pub.t, priv->lamda[i], priv->pub.n, ctx))
+        //s[i] = t ^ lambda[i]
+        if (!BN_mod_exp(priv->pub.s[i], priv->pub.t, priv->lambda[i], priv->pub.n, ctx))
         {
             goto cleanup;
         }
@@ -382,6 +382,7 @@ cleanup:
         ret = RING_PEDERSEN_UNKNOWN_ERROR;
     }
   
+    BN_CTX_end(ctx);
     return ret;
 }
 
@@ -411,9 +412,9 @@ ring_pedersen_status damgard_fujisaki_generate_private_key(const uint32_t key_le
     }
 
     local_priv->pub.s = (BIGNUM**) calloc(dimension, sizeof(BIGNUM*));
-    local_priv->lamda = (BIGNUM**) calloc(dimension, sizeof(BIGNUM*));
+    local_priv->lambda = (BIGNUM**) calloc(dimension, sizeof(BIGNUM*));
 
-    if (!local_priv->pub.s || !local_priv->lamda) 
+    if (!local_priv->pub.s || !local_priv->lambda) 
     {
         goto cleanup;
     }
@@ -442,19 +443,19 @@ ring_pedersen_status damgard_fujisaki_generate_private_key(const uint32_t key_le
     BN_set_flags(local_priv->q,     BN_FLG_CONSTTIME);
     BN_set_flags(local_priv->qinvp, BN_FLG_CONSTTIME);
 
-    local_priv->pub.dimension = dimension; //must set dimention before allocating internal memory for free to work
+    local_priv->pub.dimension = dimension; //must set dimension before allocating internal memory for free to work
 
     for (uint32_t i = 0; i < dimension; ++i) 
     {
         local_priv->pub.s[i] = BN_new();
-        local_priv->lamda[i] = BN_new();
-        if (!local_priv->pub.s[i] || !local_priv->lamda[i]) 
+        local_priv->lambda[i] = BN_new();
+        if (!local_priv->pub.s[i] || !local_priv->lambda[i]) 
         {
             ret = RING_PEDERSEN_OUT_OF_MEMORY;
             goto cleanup;
         }
 
-        BN_set_flags(local_priv->lamda[i], BN_FLG_CONSTTIME);
+        BN_set_flags(local_priv->lambda[i], BN_FLG_CONSTTIME);
     }
 
     ret = damgard_fujisaki_generate_key_inner(key_len, dimension, local_priv, ctx);
@@ -587,7 +588,7 @@ static inline uint32_t damgard_fujisaki_public_serialized_size(const damgard_fuj
         + size_n // n
         + sizeof(uint32_t) // dimension
         + size_n // t
-        + pub->dimension * size_n; // s times dimentions
+        + pub->dimension * size_n; // s times dimensions
 }
 
 uint8_t* damgard_fujisaki_public_serialize(const damgard_fujisaki_public_t* pub, uint8_t* buffer, const uint32_t buffer_len, uint32_t* real_buffer_len) 
@@ -694,7 +695,6 @@ static inline uint32_t damgard_fujisaki_public_deserialize_internal(damgard_fuji
         goto cleanup;
     }
     
-    assert(buffer_len >= 2 * sizeof(uint32_t) + (2 * n_len) + (pub->dimension * n_len));
     if (buffer_len < (2 * sizeof(uint32_t)) + (2 * n_len) + (pub->dimension * n_len))
     {
         goto cleanup;
@@ -740,7 +740,8 @@ damgard_fujisaki_public_t* damgard_fujisaki_public_deserialize(const uint8_t* co
         goto cleanup;
     }
 
-    if ( 0 == damgard_fujisaki_public_deserialize_internal(pub, buffer, buffer_len))
+    const uint32_t bytes_consumed = damgard_fujisaki_public_deserialize_internal(pub, buffer, buffer_len);
+    if (0 == bytes_consumed || bytes_consumed != buffer_len)
     {
         goto cleanup;
     }
@@ -822,7 +823,7 @@ uint8_t *damgard_fujisaki_private_serialize(const damgard_fujisaki_private_t* pr
     // lambda_i
     for (uint32_t i = 0; i < priv->pub.dimension; ++i) 
     {
-        if (BN_bn2binpad(priv->lamda[i], ptr, size_n) == -1) 
+        if (BN_bn2binpad(priv->lambda[i], ptr, size_n) == -1) 
         {
             return NULL;
         }
@@ -865,9 +866,9 @@ damgard_fujisaki_private_t* damgard_fujisaki_private_deserialize(const uint8_t* 
     priv->p = BN_new();
     priv->q = BN_new();
     priv->qinvp = BN_new();
-    priv->lamda = (BIGNUM**) calloc(priv->pub.dimension, sizeof(BIGNUM*));
+    priv->lambda = (BIGNUM**) calloc(priv->pub.dimension, sizeof(BIGNUM*));
 
-    if (!priv->phi_n || !priv->p || !priv->q || !priv->qinvp || !priv->lamda)
+    if (!priv->phi_n || !priv->p || !priv->q || !priv->qinvp || !priv->lambda)
     {
         goto cleanup;
     }
@@ -901,16 +902,16 @@ damgard_fujisaki_private_t* damgard_fujisaki_private_deserialize(const uint8_t* 
     buffer_len -= size_n / 2;
 
 
-    // lamda array
+    // lambda array
     for (uint32_t i = 0; i < priv->pub.dimension; ++i) 
     {
-        priv->lamda[i] = BN_new();
-        if (!priv->lamda[i] || !BN_bin2bn(buffer, size_n, priv->lamda[i]))
+        priv->lambda[i] = BN_new();
+        if (!priv->lambda[i] || !BN_bin2bn(buffer, size_n, priv->lambda[i]))
         {
             goto cleanup;
         }
         
-        BN_set_flags(priv->lamda[i],   BN_FLG_CONSTTIME);        
+        BN_set_flags(priv->lambda[i],   BN_FLG_CONSTTIME);        
 
         buffer += size_n;
         buffer_len -= size_n;
@@ -918,7 +919,7 @@ damgard_fujisaki_private_t* damgard_fujisaki_private_deserialize(const uint8_t* 
 
     assert(buffer_len == 0);
 
-    // computer qinvp
+    // compute qinvp
     if (!BN_mod_inverse(priv->qinvp, priv->q, priv->p, ctx))
     {
         goto cleanup;

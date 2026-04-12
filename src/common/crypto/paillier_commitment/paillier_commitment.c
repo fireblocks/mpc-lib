@@ -2,7 +2,7 @@
 #include "crypto/paillier_commitment/paillier_commitment.h"
 #include "crypto/commitments/damgard_fujisaki.h"
 #include "crypto/zero_knowledge_proof/range_proofs.h"
-#include "../algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 #include "../zero_knowledge_proof/zkp_constants_internal.h"
 #include "../paillier/paillier_internal.h"
 #include "../commitments/damgard_fujisaki_internal.h"
@@ -19,10 +19,10 @@
 static inline uint32_t PAILLIER_COMMITMENTS_LAMBDA_BITSIZE(const uint32_t n_bitlen)
 {
           return (2 * ZKPOK_OPTIM_L_SIZE(n_bitlen) * 8);
-}   
+}
 
 #define PAILLIER_COMMITMENTS_MIN_KEY_SIZE               (PAILLIER_COMMITMENTS_MIN_KEY_BITSIZE / 8)
-#define PAILLIER_COMMITMENTS_MAX_KEY_SIZE               (8192) 
+#define PAILLIER_COMMITMENTS_MAX_KEY_SIZE               (8192)
 #define PAILLIER_COMMITMENTS_MAX_SERIALIZED_SIZE        (64 * 1024)
 
 static inline long paillier_commitment_init_montgomery(paillier_commitment_public_key_t *pub, BN_CTX *ctx)
@@ -32,7 +32,7 @@ static inline long paillier_commitment_init_montgomery(paillier_commitment_publi
     {
         return PAILLIER_ERROR_OUT_OF_MEMORY;
     }
-    
+
     if (!pub->mont_n2)
     {
         pub->mont_n2 = BN_MONT_CTX_new();
@@ -52,7 +52,7 @@ static inline long paillier_commitment_init_montgomery(paillier_commitment_publi
         local_ctx = NULL;
     }
 
-    return pub->mont_n2 ? PAILLIER_SUCCESS : PAILLIER_ERROR_OUT_OF_MEMORY;    
+    return pub->mont_n2 ? PAILLIER_SUCCESS : PAILLIER_ERROR_OUT_OF_MEMORY;
 }
 
 static void paillier_commitment_cleanup_public_key(paillier_commitment_public_key_t *pub)
@@ -61,19 +61,19 @@ static void paillier_commitment_cleanup_public_key(paillier_commitment_public_ke
     {
         BN_free(pub->n);
         pub->n = NULL;
-        
+
         BN_free(pub->t);
         pub->t = NULL;
-        
+
         BN_free(pub->s);
         pub->s = NULL;
-        
+
         BN_free(pub->n2);
         pub->n2 = NULL;
-        
+
         BN_free(pub->rho);
         pub->rho = NULL;
-        
+
         BN_free(pub->sigma_0);
         pub->sigma_0 = NULL;
 
@@ -93,25 +93,25 @@ static void paillier_commitment_cleanup_private_key(paillier_commitment_private_
 
         BN_clear_free(priv->p);
         priv->p = NULL;
-        
+
         BN_clear_free(priv->q);
         priv->q = NULL;
-        
+
         BN_clear_free(priv->lambda);
         priv->lambda = NULL;
-        
+
         BN_clear_free(priv->p2);
         priv->p2 = NULL;
-        
+
         BN_clear_free(priv->q2);
         priv->q2 = NULL;
-        
+
         BN_clear_free(priv->q2_inv_p2);
         priv->q2_inv_p2 = NULL;
-        
+
         BN_clear_free(priv->phi_n);
         priv->phi_n = NULL;
-        
+
         BN_clear_free(priv->phi_n_inv);
         priv->phi_n_inv = NULL;
     }
@@ -135,11 +135,11 @@ uint32_t paillier_commitment_public_bitsize(const paillier_commitment_public_key
 {
     if (pub)
     {
-        // we use number of bytes to allwo some tolerance
+        // we use number of bytes to allow some tolerance
         // since we multiply to primes of half bitlength the result may be not exactly twice number of bits
         // the smallest product of multiplying two primes of size n bits will have 2n-2 bits
-        // This is why use use number of bytes to round up
-        return (uint32_t)BN_num_bytes(pub->n) * 8; 
+        // This is why we use number of bytes to round up
+        return (uint32_t)BN_num_bytes(pub->n) * 8;
     }
 
     return 0;
@@ -175,9 +175,9 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
     {
         goto cleanup;
     }
-    
-    if (!BN_set_word(three, 3) || 
-        !BN_set_word(seven, 7) || 
+
+    if (!BN_set_word(three, 3) ||
+        !BN_set_word(seven, 7) ||
         !BN_set_word(eight, 8))
     {
         goto cleanup;
@@ -191,13 +191,13 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
     priv->q2_inv_p2 = BN_new();
     priv->phi_n = BN_new();
     priv->phi_n_inv = BN_new();
-    if (!priv->p            || 
-        !priv->q            || 
-        !priv->lambda       || 
-        !priv->p2           || 
-        !priv->q2           || 
-        !priv->q2_inv_p2    || 
-        !priv->phi_n        || 
+    if (!priv->p            ||
+        !priv->q            ||
+        !priv->lambda       ||
+        !priv->p2           ||
+        !priv->q2           ||
+        !priv->q2_inv_p2    ||
+        !priv->phi_n        ||
         !priv->phi_n_inv)
     {
         goto cleanup;
@@ -213,7 +213,7 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
 
     if (!priv->pub.t        ||
         !priv->pub.s        ||
-        !priv->pub.n        || 
+        !priv->pub.n        ||
         !priv->pub.n2       ||
         !priv->pub.rho      ||
         !priv->pub.sigma_0)
@@ -229,11 +229,11 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
     {   // note - originally we had used p and q to be 4*k + 3. The new form keeps this requirement because
         // both p and q still satisfies 4 * k + 3
 
-        // p needs to be in the form of p = 8 * k + 3 ( p = 3 mod 8) to allow efficient calculation off fourth roots 
+        // p needs to be in the form of p = 8 * k + 3 ( p = 3 mod 8) to allow efficient calculation off fourth roots
         // (needed in paillier blum zkp)
 
         if (ELLIPTIC_CURVE_ALGEBRA_SUCCESS != generate_tough_prime(priv->p, key_len / 2, PAILLIER_COMMITMENTS_TOUGH_SUBPRIMES_BITSIZE, eight, three, ctx))
-        { 
+        {
             ret = PAILLIER_ERROR_UNKNOWN;
             goto cleanup;
         }
@@ -249,7 +249,7 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
         //because p and q are tough primes their length can differ in key_len / 2 * PAILLIER_COMMITMENTS_TOUGH_SUBPRIMES_BITSIZE bits
         assert((uint32_t)BN_num_bits(priv->q) == (key_len / 2));
 
-        
+
         // Compute n = pq
         if (!BN_mul(priv->pub.n, priv->p, priv->q, ctx))
         {
@@ -266,8 +266,8 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
         }
 
     } while (paillier_commitment_public_bitsize(&priv->pub) != key_len  ||
-             BN_cmp(priv->p, priv->q) == 0                              || 
-             !BN_gcd(tmp, priv->phi_n, priv->pub.n, ctx)                || 
+             BN_cmp(priv->p, priv->q) == 0                              ||
+             !BN_gcd(tmp, priv->phi_n, priv->pub.n, ctx)                ||
              !BN_is_one(tmp));
 
     if (!BN_mod_inverse(priv->phi_n_inv, priv->phi_n, priv->pub.n, ctx))
@@ -283,7 +283,7 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
     {
         goto cleanup;
     }
-            
+
     // generate random r in mod n
     do
     {
@@ -292,7 +292,7 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
             goto cleanup;
         }
 
-    } while (!BN_gcd(tmp, r, priv->pub.n, ctx) || 
+    } while (!BN_gcd(tmp, r, priv->pub.n, ctx) ||
              !BN_is_one(tmp));
 
     // t = r ^ 2 in mod n
@@ -301,7 +301,8 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
         goto cleanup;
     }
 
-    if (!BN_rand(priv->lambda, PAILLIER_COMMITMENTS_LAMBDA_BITSIZE(key_len), BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
+    // there is an assert in the serialization for sanity function that requires lambda to be of the right size
+    if (!BN_rand(priv->lambda, PAILLIER_COMMITMENTS_LAMBDA_BITSIZE(key_len), BN_RAND_TOP_ONE, BN_RAND_BOTTOM_ANY))
     {
         goto cleanup;
     }
@@ -329,19 +330,19 @@ static long paillier_commitment_generate_private(const uint32_t key_len, paillie
         goto cleanup;
     }
 
-    
+
 
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (r)
     {
         BN_clear(r);
     }
-    
+
     BN_CTX_end(ctx);
 
     return ret;
@@ -357,13 +358,13 @@ long paillier_commitment_generate_private_key(const uint32_t key_len, paillier_c
     {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
-    
+
     *priv = NULL;
 
     if (key_len < PAILLIER_COMMITMENTS_MIN_KEY_BITSIZE)
     {
         return PAILLIER_ERROR_KEYLEN_TOO_SHORT;
-    
+
     }
     if (key_len % PAILLIER_COMMITMENTS_TOUGH_SUBPRIMES_BITSIZE != 0)
     {
@@ -381,8 +382,8 @@ long paillier_commitment_generate_private_key(const uint32_t key_len, paillier_c
     ctx = BN_CTX_secure_new();
     if (!ctx)
     {
-        //not jumping to cleanup to avoid initializating all local variables
-        return PAILLIER_ERROR_OUT_OF_MEMORY; 
+        //not jumping to cleanup to avoid initializing all local variables
+        return PAILLIER_ERROR_OUT_OF_MEMORY;
     }
 
     local_private = (paillier_commitment_private_key_t*) calloc(1, sizeof(paillier_commitment_private_key_t));
@@ -400,7 +401,7 @@ long paillier_commitment_generate_private_key(const uint32_t key_len, paillier_c
     }
 
 cleanup:
-    
+
     BN_CTX_free(ctx);
 
     if (ret)
@@ -451,7 +452,7 @@ long paillier_commitment_public_key_serialize(const paillier_commitment_public_k
     {
         return PAILLIER_ERROR_BUFFER_TOO_SHORT;
     }
-    
+
     if (!buffer)
     {
         return PAILLIER_ERROR_INVALID_PARAM;
@@ -460,35 +461,35 @@ long paillier_commitment_public_key_serialize(const paillier_commitment_public_k
     *(uint32_t*)ptr = n_len;
     ptr += sizeof(uint32_t);
 
-    if (!BN_bn2binpad(pub->n, ptr, n_len))
+    if (BN_bn2binpad(pub->n, ptr, n_len) <= 0)
     {
-        return -1 * ERR_get_error();
-    }
-    ptr += n_len;
-    
-    if (!BN_bn2binpad(pub->t, ptr, n_len))
-    {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += n_len;
 
-    if (!BN_bn2binpad(pub->s, ptr, n_len))
+    if (BN_bn2binpad(pub->t, ptr, n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
+    }
+    ptr += n_len;
+
+    if (BN_bn2binpad(pub->s, ptr, n_len) <= 0)
+    {
+        return paillier_error_from_openssl();
     }
     ptr += n_len;
 
     if (!is_reduced)
     {
-        if (!BN_bn2binpad(pub->rho, ptr, 2 * n_len))
+        if (BN_bn2binpad(pub->rho, ptr, 2 * n_len) <= 0)
         {
-            return -1 * ERR_get_error();
+            return paillier_error_from_openssl();
         }
         ptr += 2 * n_len;
-        
-        if (!BN_bn2binpad(pub->sigma_0, ptr, 2 * n_len))
+
+        if (BN_bn2binpad(pub->sigma_0, ptr, 2 * n_len) <= 0)
         {
-            return -1 * ERR_get_error();
+            return paillier_error_from_openssl();
         }
         ptr += 2 * n_len;
     }
@@ -539,7 +540,7 @@ paillier_commitment_public_key_t * paillier_commitment_public_key_deserialize(co
     if (buffer_len < needed_len)
     {
         goto cleanup;
-    }   
+    }
 
     pub->n = BN_bin2bn(buffer, n_len, NULL);
     buffer += n_len;
@@ -561,7 +562,7 @@ paillier_commitment_public_key_t * paillier_commitment_public_key_deserialize(co
     {
         goto cleanup;
     }
-    
+
     if (PAILLIER_SUCCESS != paillier_commitment_init_montgomery(pub, ctx))
     {
         goto cleanup;
@@ -585,7 +586,7 @@ paillier_commitment_public_key_t * paillier_commitment_public_key_deserialize(co
         // calculate t_n and s_n
         pub->rho = BN_new();
         pub->sigma_0 = BN_new();
-        if (!pub->rho || 
+        if (!pub->rho ||
             !pub->sigma_0)
         {
             goto cleanup;
@@ -611,14 +612,14 @@ paillier_commitment_public_key_t * paillier_commitment_public_key_deserialize(co
     return pub;
 
 cleanup:
-    
+
     BN_CTX_free(ctx);
 
     paillier_commitment_free_public_key(pub);
     return NULL;
 }
 
-#define NUM_OF_ADDITIONAL_COMMITMENT_VALUES (10) 
+#define NUM_OF_ADDITIONAL_COMMITMENT_VALUES (10)
 
 long paillier_commitment_private_key_serialize(const paillier_commitment_private_key_t *priv,
                                                uint8_t *buffer,
@@ -641,11 +642,10 @@ long paillier_commitment_private_key_serialize(const paillier_commitment_private
     assert((uint32_t)BN_num_bytes(priv->lambda) == lambda_len);
 
 
-
     // going to store p, q, lambda, t, s, rho, sigma_0, q2_inv_p2 and phi_n_inv
     needed_len = sizeof(uint32_t) +
                  prime_len * 2 + // p and q
-                 lambda_len + 
+                 lambda_len +
                  n_len * NUM_OF_ADDITIONAL_COMMITMENT_VALUES;
 
     if (real_buffer_len)
@@ -657,7 +657,7 @@ long paillier_commitment_private_key_serialize(const paillier_commitment_private
     {
         return PAILLIER_ERROR_BUFFER_TOO_SHORT;
     }
-    
+
     if (!buffer)
     {
         return PAILLIER_ERROR_INVALID_PARAM;
@@ -666,62 +666,62 @@ long paillier_commitment_private_key_serialize(const paillier_commitment_private
     *(uint32_t*)ptr = n_len;
     ptr += sizeof(uint32_t);
 
-    if (!BN_bn2binpad(priv->p, ptr, prime_len))
+    if (BN_bn2binpad(priv->p, ptr, prime_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += prime_len;
 
-    if (!BN_bn2binpad(priv->q, ptr, prime_len))
+    if (BN_bn2binpad(priv->q, ptr, prime_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += prime_len;
 
-    if (!BN_bn2binpad(priv->lambda, ptr, lambda_len))
+    if (BN_bn2binpad(priv->lambda, ptr, lambda_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += lambda_len;
 
 
-    if (!BN_bn2binpad(priv->pub.t, ptr, n_len))
+    if (BN_bn2binpad(priv->pub.t, ptr, n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += n_len;
 
-    if (!BN_bn2binpad(priv->pub.s, ptr, n_len))
+    if (BN_bn2binpad(priv->pub.s, ptr, n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += n_len;
 
-    if (!BN_bn2binpad(priv->pub.rho, ptr, 2 * n_len))
+    if (BN_bn2binpad(priv->pub.rho, ptr, 2 * n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += 2 * n_len;
 
-    if (!BN_bn2binpad(priv->pub.sigma_0, ptr, 2 * n_len))
+    if (BN_bn2binpad(priv->pub.sigma_0, ptr, 2 * n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += 2 * n_len;
 
 
-    if (!BN_bn2binpad(priv->q2_inv_p2, ptr, 2 * n_len))
+    if (BN_bn2binpad(priv->q2_inv_p2, ptr, 2 * n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += 2 * n_len;
 
-     if (!BN_bn2binpad(priv->phi_n_inv, ptr, 2 * n_len))
+     if (BN_bn2binpad(priv->phi_n_inv, ptr, 2 * n_len) <= 0)
     {
-        return -1 * ERR_get_error();
+        return paillier_error_from_openssl();
     }
     ptr += 2 * n_len;
-    
+
     assert ( (uint32_t)(ptr - buffer) == needed_len );
 
     return PAILLIER_SUCCESS;
@@ -749,7 +749,7 @@ paillier_commitment_private_key_t * paillier_commitment_private_key_deserialize(
     {
         goto cleanup;
     }
-    
+
     n_len = *(const uint32_t*)buffer;
     buffer += sizeof(uint32_t);
     prime_len = ((n_len * 8  / 2)  + 7) / 8;
@@ -793,14 +793,14 @@ paillier_commitment_private_key_t * paillier_commitment_private_key_deserialize(
     priv->phi_n_inv = BN_bin2bn(buffer, 2 * n_len, NULL);
     buffer += 2 * n_len;
 
-    if (!priv->p || 
-        !priv->q || 
-        !priv->lambda || 
-        !priv->pub.t || 
-        !priv->pub.s || 
-        !priv->pub.rho || 
-        !priv->pub.sigma_0 || 
-        !priv->q2_inv_p2 || 
+    if (!priv->p ||
+        !priv->q ||
+        !priv->lambda ||
+        !priv->pub.t ||
+        !priv->pub.s ||
+        !priv->pub.rho ||
+        !priv->pub.sigma_0 ||
+        !priv->q2_inv_p2 ||
         !priv->phi_n_inv)
     {
         goto cleanup;
@@ -836,41 +836,41 @@ paillier_commitment_private_key_t * paillier_commitment_private_key_deserialize(
     {
         goto cleanup;
     }
-    
+
     // calculate n^2, p^2, q^2 and 1/q^2 in mod p^2
     if (!BN_sqr(priv->pub.n2, priv->pub.n, ctx) ||
         !BN_sqr(priv->p2, priv->p, ctx) ||
         !BN_sqr(priv->q2, priv->q, ctx))
     {
         goto cleanup;
-    }       
-    
+    }
+
     paillier_commitment_set_consttime_flag(priv);
 
     if (PAILLIER_SUCCESS != paillier_commitment_init_montgomery(&priv->pub, ctx))
     {
         goto cleanup;
     }
-    
+
     BN_CTX_free(ctx);
     return priv;
 
-cleanup: 
+cleanup:
     BN_CTX_free(ctx);
     paillier_commitment_free_private_key(priv);
     return NULL;
 }
 
-// this is the paillir public key encryption with small group.
-long paillier_commitment_encrypt_openssl_fixed_power_internal(const paillier_commitment_public_key_t *pub, 
-                                                              BIGNUM *ciphertext, 
-                                                              const BIGNUM *r_power, 
-                                                              const BIGNUM *message, 
+// this is the paillier public key encryption with small group.
+long paillier_commitment_encrypt_openssl_fixed_power_internal(const paillier_commitment_public_key_t *pub,
+                                                              BIGNUM *ciphertext,
+                                                              const BIGNUM *r_power,
+                                                              const BIGNUM *message,
                                                               BN_CTX *ctx)
 {
     BIGNUM *tmp1 = NULL, *tmp2 = NULL;
     int ret = -1;
-    
+
     if (!pub || !ciphertext  || !message || !r_power || !ctx)
     {
         return PAILLIER_ERROR_INVALID_PARAM;
@@ -886,13 +886,13 @@ long paillier_commitment_encrypt_openssl_fixed_power_internal(const paillier_com
     {
         goto cleanup;
     }
-    
+
     if (!BN_mul(tmp1, pub->n, message, ctx) || // tmp1 = n * message
         !BN_add_word(tmp1, 1))                 // tmp1 = (1 + n * message)
     {
         goto cleanup;
     }
-    
+
     if (!BN_mod_exp_mont(tmp2,  pub->rho, r_power, pub->n2, ctx,  pub->mont_n2)) //tmp2 = (t^n)^r_power_local mod n2
     {
         goto cleanup;
@@ -902,43 +902,41 @@ long paillier_commitment_encrypt_openssl_fixed_power_internal(const paillier_com
     {
         goto cleanup;
     }
-        
+
     ret = PAILLIER_SUCCESS;
 
 cleanup:
-    
+
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
-       
+
     BN_CTX_end(ctx);
 
     return ret;
 
 }
 
-// r_power is an optional output paramer
-static long paillier_commitment_encrypt_openssl_internal(const paillier_commitment_public_key_t *pub, 
+// r_power is an optional output parameter
+static long paillier_commitment_encrypt_openssl_internal(const paillier_commitment_public_key_t *pub,
                                                          const uint32_t r_power_bitsize,
-                                                         const BIGNUM *message, 
+                                                         const BIGNUM *message,
                                                          BN_CTX *ctx,
                                                          BIGNUM *ciphertext)
 {
     BIGNUM *r_power = NULL;
     int ret = -1;
-    
+
     if (!pub || !ciphertext  || !message || !r_power_bitsize || !ctx)
     {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
 
-    
-    if (r_power_bitsize > paillier_commitment_public_bitsize(pub))
-    {
-        return PAILLIER_ERROR_INVALID_PARAM;
-    }
-    
+
+    // r_power_bitsize can be even bigger because it is used in pedersen commitment and used as a blinding factor
+
+
     BN_CTX_start(ctx);
 
     r_power = BN_CTX_get(ctx);
@@ -947,53 +945,49 @@ static long paillier_commitment_encrypt_openssl_internal(const paillier_commitme
     {
         goto cleanup;
     }
-    
-    do
+
+    // no need to loop and check that r_power is coprime because actual value being used
+    // as the blinding factor is rho^r_power. It is rho that has to be coprime with n and
+    // it is checked already when rho is generated
+    if (!BN_rand(r_power, r_power_bitsize, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
     {
-        if (!BN_rand(r_power, r_power_bitsize, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
-        {
-            goto cleanup;
-        }
-    } while (BN_cmp(r_power, pub->n) >= 0 ||
-            1 != is_coprime_fast(r_power, pub->n, ctx));
+        goto cleanup;
+    }
 
     ret = paillier_commitment_encrypt_openssl_fixed_power_internal(pub, ciphertext, r_power, message, ctx);
 
 cleanup:
-    
+
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     BN_clear(r_power);
-    
+
     BN_CTX_end(ctx);
 
     return ret;
 }
 
-// r_power is an optional output paramer
-long paillier_commitment_encrypt_openssl_with_private_internal(const paillier_commitment_private_key_t *priv, 
+// r_power is an optional output parameter
+long paillier_commitment_encrypt_openssl_with_private_internal(const paillier_commitment_private_key_t *priv,
                                                                const uint32_t r_power_bitsize,
-                                                               const BIGNUM *message, 
+                                                               const BIGNUM *message,
                                                                BN_CTX *ctx,
-                                                               BIGNUM *ciphertext, 
+                                                               BIGNUM *ciphertext,
                                                                BIGNUM *r_power)
 {
     int ret = -1;
     BIGNUM *mod_p2, *mod_q2, *tmp;
-    
+
     if (!priv || !ciphertext  || !r_power_bitsize || !message || !ctx || !r_power)
     {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
-    
-    if (r_power_bitsize > paillier_commitment_public_bitsize(&priv->pub))
-    {
-        return PAILLIER_ERROR_INVALID_PARAM;
-    }
-    
+
+    // r_power_bitsize can be even bigger because it is used in pedersen commitment and used as a blinding factor
+
     BN_CTX_start(ctx);
 
     mod_p2 = BN_CTX_get(ctx);
@@ -1005,20 +999,18 @@ long paillier_commitment_encrypt_openssl_with_private_internal(const paillier_co
         goto cleanup;
     }
 
-    do
+    // no need to loop and check that r_power is coprime because actual value being used
+    // as the blinding factor is rho^r_power. It is rho that has to be coprime with n and
+    // it is checked already when rho is generated
+    if (!BN_rand(r_power, r_power_bitsize, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
     {
-        if (!BN_rand(r_power, r_power_bitsize, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
-        {
-            goto cleanup;
-        }
-    } while (BN_cmp(r_power, priv->pub.n) >= 0 ||
-             1 != is_coprime_fast(r_power, priv->pub.n, ctx));
-    
- 
+        goto cleanup;
+    }
+
     // Compute ciphertext = g^message*(t^n)^r_power_local mod n^2
     // as will select g=n+1 ciphertext = (1+n*message)*(t^n)^r_power_local mod n^2, see https://en.wikipedia.org/wiki/Paillier_cryptosystem
     // Computed using CRT.
-    
+
     if (!BN_mod_mul(mod_p2, priv->pub.n, message, priv->p2, ctx) || // mod_p2 = n * message mod p^2
         !BN_add_word(mod_p2, 1)                                  || // mod_p2 = n * message  + 1 mod p^2
         !BN_mod_exp(tmp, priv->pub.rho, r_power, priv->p2, ctx)  || // tmp = (t^n) ^ r_power_local mod p^2
@@ -1026,12 +1018,12 @@ long paillier_commitment_encrypt_openssl_with_private_internal(const paillier_co
     {
         goto cleanup;
     }
-        
+
     if (!BN_mod_mul(mod_q2, priv->pub.n, message, priv->q2, ctx) || // mod_q2 = n * message mod q^2
         !BN_add_word(mod_q2, 1)                                  || // mod_q2 = n * message + 1 mod q^2
         !BN_mod_exp(tmp, priv->pub.rho, r_power, priv->q2, ctx)  || // tmp = (t^n) ^ r_power_local mod q^2
         !BN_mod_mul(mod_q2, mod_q2, tmp, priv->q2, ctx))            // mod_q2 = mod_q2 * tmp = (n * message + 1) * (t^n)^r_power_local mod q^2
-    {        
+    {
         goto cleanup;
     }
 
@@ -1040,13 +1032,13 @@ long paillier_commitment_encrypt_openssl_with_private_internal(const paillier_co
         ret = PAILLIER_ERROR_UNKNOWN;
         goto cleanup;
     }
-    
+
     ret = PAILLIER_SUCCESS;
 
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     BN_clear(mod_p2);
@@ -1073,12 +1065,12 @@ long paillier_commitment_encrypt(const paillier_commitment_public_key_t *pub,
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-        
+
     if (!plaintext || plaintext_len > (uint32_t)BN_num_bytes(pub->n))
     {
         return PAILLIER_ERROR_INVALID_PLAIN_TEXT;
     }
-        
+
     if (ciphertext_real_len)
     {
         *ciphertext_real_len = (uint32_t)BN_num_bytes(pub->n2);
@@ -1100,14 +1092,14 @@ long paillier_commitment_encrypt(const paillier_commitment_public_key_t *pub,
         return PAILLIER_ERROR_OUT_OF_MEMORY;
     }
     BN_CTX_start(ctx);
-    
+
     msg = BN_CTX_get(ctx);
     c = BN_CTX_get(ctx);
     if (!c || !msg)
     {
         goto cleanup;
     }
-    
+
     if (!BN_bin2bn(plaintext, plaintext_len, msg))
     {
         goto cleanup;
@@ -1127,7 +1119,7 @@ long paillier_commitment_encrypt(const paillier_commitment_public_key_t *pub,
         goto cleanup;
     }
 
-    if (!BN_bn2binpad(c, ciphertext, (uint32_t)BN_num_bytes(pub->n2)))
+    if (BN_bn2binpad(c, ciphertext, (uint32_t)BN_num_bytes(pub->n2)) <= 0)
     {
         ret = -1;
         goto cleanup;
@@ -1140,7 +1132,7 @@ cleanup:
     {
         if (-1 == ret)
         {
-            ret = ERR_get_error() * -1;
+            ret = paillier_error_from_openssl();
         }
     }
 
@@ -1150,9 +1142,9 @@ cleanup:
     return ret;
 }
 
-long paillier_commitment_decrypt_openssl_internal(const paillier_commitment_private_key_t *priv, 
-                                                  const BIGNUM *ciphertext, 
-                                                  BIGNUM *plaintext, 
+long paillier_commitment_decrypt_openssl_internal(const paillier_commitment_private_key_t *priv,
+                                                  const BIGNUM *ciphertext,
+                                                  BIGNUM *plaintext,
                                                   BN_CTX *ctx)
 {
     int ret = -1;
@@ -1160,12 +1152,12 @@ long paillier_commitment_decrypt_openssl_internal(const paillier_commitment_priv
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-    
+
     if (!ciphertext)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
-    
+
     if (!plaintext)
     {
         return PAILLIER_ERROR_INVALID_PLAIN_TEXT;
@@ -1193,7 +1185,7 @@ long paillier_commitment_decrypt_openssl_internal(const paillier_commitment_priv
         goto cleanup;
     }
 
-    // Compute the plaintext = paillier_L(ciphertext^lamda mod n2)*mu mod n
+    // Compute the plaintext = paillier_L(ciphertext^lambda mod n2)*mu mod n
     if (ELLIPTIC_CURVE_ALGEBRA_SUCCESS != crt_mod_exp(tmp, ciphertext, priv->phi_n, priv->p2, priv->q2, priv->q2_inv_p2, priv->pub.n2, ctx))
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1205,8 +1197,8 @@ long paillier_commitment_decrypt_openssl_internal(const paillier_commitment_priv
     {
         goto cleanup;
     }
-    
-    ret = -1; //revet to openssl error
+
+    ret = -1; //revert to openssl error
 
     if (!BN_mod_mul(plaintext, tmp, priv->phi_n_inv, priv->pub.n, ctx))
     {
@@ -1218,7 +1210,7 @@ long paillier_commitment_decrypt_openssl_internal(const paillier_commitment_priv
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     BN_CTX_end(ctx);
@@ -1240,12 +1232,12 @@ long paillier_commitment_decrypt(const paillier_commitment_private_key_t *priv,
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-        
+
     if (!ciphertext || ciphertext_len > (uint32_t)BN_num_bytes(priv->pub.n2))
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
-        
+
     if (plaintext_real_len)
     {
         *plaintext_real_len = (uint32_t)BN_num_bytes(priv->pub.n);
@@ -1288,7 +1280,7 @@ long paillier_commitment_decrypt(const paillier_commitment_private_key_t *priv,
         goto cleanup;
     }
 
-    if (!BN_bn2binpad(msg, plaintext, (uint32_t)BN_num_bytes(priv->pub.n)))
+    if (BN_bn2binpad(msg, plaintext, (uint32_t)BN_num_bytes(priv->pub.n)) <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
         goto cleanup;
@@ -1343,7 +1335,7 @@ long paillier_commitment_commit_with_private_internal(const paillier_commitment_
         goto cleanup;
     }
 
-    if (!BN_MONT_CTX_set(mont_p2, priv->p2, ctx) || 
+    if (!BN_MONT_CTX_set(mont_p2, priv->p2, ctx) ||
         !BN_MONT_CTX_set(mont_q2, priv->q2, ctx))
     {
         goto cleanup;
@@ -1381,7 +1373,7 @@ long paillier_commitment_commit_with_private_internal(const paillier_commitment_
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (commitment_modP2)
@@ -1396,8 +1388,8 @@ cleanup:
 
     BN_MONT_CTX_free(mont_p2);
     BN_MONT_CTX_free(mont_q2);
-    
-    BN_CTX_end(ctx); 
+
+    BN_CTX_end(ctx);
     return ret;
 
 
@@ -1425,7 +1417,7 @@ long paillier_commitment_commit_internal(const paillier_commitment_public_key_t 
     {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
-    
+
     BN_CTX_start(ctx);
     tmp = BN_CTX_get(ctx);
     if (!tmp)
@@ -1452,10 +1444,10 @@ long paillier_commitment_commit_internal(const paillier_commitment_public_key_t 
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
-    BN_CTX_end(ctx); 
+    BN_CTX_end(ctx);
     return ret;
 }
 
@@ -1469,7 +1461,7 @@ long paillier_commitment_commit(const paillier_commitment_public_key_t *pub,
                                 const uint32_t modifier_exp_size,
                                 paillier_commitment_with_randomizer_power_t** commitment)
 {
-    
+
     long ret = -1;
     paillier_commitment_with_randomizer_power_t* local_commitment = NULL;
     BIGNUM *bn_commited = NULL, *bn_random_expo_val = NULL;
@@ -1481,7 +1473,7 @@ long paillier_commitment_commit(const paillier_commitment_public_key_t *pub,
     {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
-    
+
     *commitment = NULL;
 
     if (modifier || modifier_size || modifier_exp || modifier_exp_size)
@@ -1509,11 +1501,17 @@ long paillier_commitment_commit(const paillier_commitment_public_key_t *pub,
     local_commitment->randomizer_exponent = (uint8_t*)calloc(1, local_commitment->randomizer_exponent_size);
     local_commitment->commitment_size = (uint32_t)BN_num_bytes(pub->n2);
     local_commitment->commitment = (uint8_t*)calloc(1, local_commitment->commitment_size);
-    
+    if (!local_commitment->randomizer_exponent || !local_commitment->commitment)
+    {
+        ret = PAILLIER_ERROR_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
     ctx = BN_CTX_new();
     if (ctx == NULL)
     {
-        return PAILLIER_ERROR_OUT_OF_MEMORY;
+        ret = PAILLIER_ERROR_OUT_OF_MEMORY;
+        goto cleanup;
     }
 
     BN_CTX_start(ctx);
@@ -1543,10 +1541,10 @@ long paillier_commitment_commit(const paillier_commitment_public_key_t *pub,
     {
         goto cleanup;
     }
-    
+
     if (modifier)
     {
-        if (!BN_bin2bn(modifier, modifier_size, bn_modifier) || 
+        if (!BN_bin2bn(modifier, modifier_size, bn_modifier) ||
             !BN_bin2bn(modifier_exp, modifier_exp_size, bn_modifier_expo) )
         {
             goto cleanup;
@@ -1559,8 +1557,8 @@ long paillier_commitment_commit(const paillier_commitment_public_key_t *pub,
         goto cleanup;
     }
 
-    if (!BN_bn2binpad(bn_random_expo_val, local_commitment->randomizer_exponent, local_commitment->randomizer_exponent_size) ||
-        !BN_bn2binpad(bn_commitment, local_commitment->commitment, local_commitment->commitment_size))
+    if (BN_bn2binpad(bn_random_expo_val, local_commitment->randomizer_exponent, local_commitment->randomizer_exponent_size) <= 0 ||
+        BN_bn2binpad(bn_commitment, local_commitment->commitment, local_commitment->commitment_size) <= 0)
     {
         ret = -1;
         goto cleanup;
@@ -1571,7 +1569,7 @@ cleanup:
     {
         if (-1 == ret)
         {
-            ret = ERR_get_error() * -1;
+            ret = paillier_error_from_openssl();
         }
         paillier_commitment_commitment_free(local_commitment);
     }
@@ -1581,8 +1579,11 @@ cleanup:
         local_commitment = NULL;
     }
 
-    BN_CTX_end(ctx);
-    BN_CTX_free(ctx);
+    if (ctx)
+    {
+        BN_CTX_end(ctx);
+        BN_CTX_free(ctx);
+    }
 
     return ret;
 
@@ -1604,7 +1605,7 @@ long paillier_commitment_verify(const paillier_commitment_public_key_t *pub,
     BIGNUM *bn_commitment = NULL, *bn_commitment_expected = NULL;
     BIGNUM *bn_modifier = NULL, *bn_modifier_expo = NULL;
 
-    if (!pub || !commited_value || !commited_value_len || !commitment || 
+    if (!pub || !commited_value || !commited_value_len || !commitment ||
         !commitment->randomizer_exponent_size || !commitment->randomizer_exponent ||
         !commitment->commitment_size || !commitment->commitment)
     {
@@ -1618,7 +1619,7 @@ long paillier_commitment_verify(const paillier_commitment_public_key_t *pub,
             return PAILLIER_ERROR_INVALID_PARAM;
         }
     }
-    
+
     ctx = BN_CTX_new();
     if (ctx == NULL)
     {
@@ -1657,7 +1658,7 @@ long paillier_commitment_verify(const paillier_commitment_public_key_t *pub,
 
     if (modifier)
     {
-        if (!BN_bin2bn(modifier, modifier_size, bn_modifier) || 
+        if (!BN_bin2bn(modifier, modifier_size, bn_modifier) ||
             !BN_bin2bn(modifier_exp, modifier_exp_size, bn_modifier_expo) )
         {
             goto cleanup;
@@ -1673,7 +1674,7 @@ long paillier_commitment_verify(const paillier_commitment_public_key_t *pub,
     if (BN_cmp(bn_commitment, bn_commitment_expected) != 0)
     {
         ret = PAILLIER_ERROR_INVALID_PROOF;
-        goto cleanup; 
+        goto cleanup;
     }
 
     ret = PAILLIER_SUCCESS;
@@ -1681,7 +1682,7 @@ long paillier_commitment_verify(const paillier_commitment_public_key_t *pub,
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     BN_CTX_end(ctx);
@@ -1703,9 +1704,9 @@ void paillier_commitment_commitment_free(paillier_commitment_with_randomizer_pow
 
 }
 
-long paillier_commitment_commitment_serialize(const paillier_commitment_with_randomizer_power_t* commitment, 
-                                              uint8_t *serialized_proof, 
-                                              uint32_t proof_len, 
+long paillier_commitment_commitment_serialize(const paillier_commitment_with_randomizer_power_t* commitment,
+                                              uint8_t *serialized_proof,
+                                              uint32_t proof_len,
                                               uint32_t *real_proof_len)
 {
     if (!commitment || (!serialized_proof && proof_len))
@@ -1759,7 +1760,7 @@ paillier_commitment_with_randomizer_power_t* paillier_commitment_commitment_dese
     commitment->randomizer_exponent_size = *(const uint32_t*)serialized_proof;
     serialized_proof += sizeof(uint32_t);
 
-    //sanitfy
+    //sanity
     if (commitment->commitment_size > PAILLIER_COMMITMENTS_MAX_SERIALIZED_SIZE ||
         commitment->randomizer_exponent_size > PAILLIER_COMMITMENTS_MAX_SERIALIZED_SIZE)
     {
@@ -1789,76 +1790,76 @@ paillier_commitment_with_randomizer_power_t* paillier_commitment_commitment_dese
 
     return commitment;
 }
- 
+
 long paillier_commitment_paillier_blum_zkp_generate(const paillier_commitment_private_key_t *priv, const uint8_t *aad, uint32_t aad_len, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *proof_real_len)
 {
     if (!priv)
-    { 
+    {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
     const paillier_private_key_t paillier_private = {
         { priv->pub.n, priv->pub.n2},
-        priv->p, 
-        priv->q, 
-        priv->phi_n, 
+        priv->p,
+        priv->q,
+        priv->phi_n,
         priv->phi_n_inv
     };
 
-    return paillier_generate_paillier_blum_zkp(&paillier_private, aad, aad_len, serialized_proof, proof_len, proof_real_len);
+    return paillier_generate_paillier_blum_zkp(&paillier_private, 0 /* compute only the first nth root */, aad, aad_len, serialized_proof, proof_len, proof_real_len);
 }
 
 long paillier_commitment_paillier_blum_zkp_verify(const paillier_commitment_public_key_t *pub, const uint8_t *aad, uint32_t aad_len, const uint8_t *serialized_proof, uint32_t proof_len)
 {
     if (!pub)
-    { 
+    {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
     const paillier_public_key_t paillier_public = { pub->n, pub->n2};
-    return paillier_verify_paillier_blum_zkp(&paillier_public, aad, aad_len, serialized_proof, proof_len);
+    return paillier_verify_paillier_blum_zkp(&paillier_public, 0, aad, aad_len, serialized_proof, proof_len);
 }
 
 uint32_t range_proof_paillier_commitment_large_factors_zkp_compute_d_bitsize(const paillier_commitment_public_key_t* pub)
 {
     if (!pub)
-    { 
+    {
         return 0;
     }
     const paillier_public_key_t paillier_public = { pub->n, pub->n2};
     return range_proof_paillier_large_factors_quadratic_zkp_compute_d_bitsize(&paillier_public);
 }
 
-zero_knowledge_proof_status range_proof_paillier_commitment_large_factors_zkp_generate(const paillier_commitment_private_key_t *priv, 
-                                                                                       const uint8_t *aad, 
-                                                                                       const uint32_t aad_len, 
+zero_knowledge_proof_status range_proof_paillier_commitment_large_factors_zkp_generate(const paillier_commitment_private_key_t *priv,
+                                                                                       const uint8_t *aad,
+                                                                                       const uint32_t aad_len,
                                                                                        const uint8_t *d_prime,
                                                                                        const uint32_t d_prime_len,
-                                                                                       uint8_t *serialized_proof, 
-                                                                                       uint32_t proof_len, 
-                                                                                       uint32_t *real_proof_len) 
+                                                                                       uint8_t *serialized_proof,
+                                                                                       uint32_t proof_len,
+                                                                                       uint32_t *real_proof_len)
 {
     if (!priv)
-    { 
+    {
         return ZKP_INVALID_PARAMETER;
     }
     const paillier_private_key_t paillier_private = {
         { priv->pub.n, priv->pub.n2},
-        priv->p, 
-        priv->q, 
-        priv->phi_n, 
+        priv->p,
+        priv->q,
+        priv->phi_n,
         priv->phi_n_inv
     };
 
     return range_proof_paillier_large_factors_quadratic_zkp_generate(&paillier_private, aad, aad_len, d_prime, d_prime_len, serialized_proof, proof_len, real_proof_len);
 }
 
-zero_knowledge_proof_status range_proof_paillier_commitment_large_factors_zkp_verify(const paillier_commitment_public_key_t *pub, 
-                                                                                     const uint8_t *aad, 
-                                                                                     const uint32_t aad_len, 
-                                                                                     const uint8_t *serialized_proof, 
-                                                                                     const uint32_t proof_len) 
+zero_knowledge_proof_status range_proof_paillier_commitment_large_factors_zkp_verify(const paillier_commitment_public_key_t *pub,
+                                                                                     const uint8_t *aad,
+                                                                                     const uint32_t aad_len,
+                                                                                     const uint8_t *serialized_proof,
+                                                                                     const uint32_t proof_len)
 {
     if (!pub)
-    { 
+    {
         return ZKP_INVALID_PARAMETER;
     }
     const paillier_public_key_t paillier_public = { pub->n, pub->n2};
@@ -1866,12 +1867,11 @@ zero_knowledge_proof_status range_proof_paillier_commitment_large_factors_zkp_ve
     return range_proof_paillier_large_factors_quadratic_zkp_verify(&paillier_public, aad, aad_len, serialized_proof, proof_len);
 }
 
-zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_generate(const paillier_commitment_private_key_t *priv, 
-                                                                                         const uint8_t* aad, 
-                                                                                         const uint32_t aad_len, 
-                                                                                         const uint32_t challenge_bitlength, 
-                                                                                         uint8_t* serialized_proof, 
-                                                                                         const uint32_t proof_len, 
+zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_generate(const paillier_commitment_private_key_t *priv,
+                                                                                         const uint8_t* aad,
+                                                                                         const uint32_t aad_len,
+                                                                                         uint8_t* serialized_proof,
+                                                                                         const uint32_t proof_len,
                                                                                          uint32_t* proof_real_len)
 {
     zero_knowledge_proof_status ret = ZKP_OUT_OF_MEMORY;
@@ -1881,7 +1881,7 @@ zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_
     {
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     ctx = BN_CTX_new();
     if (!ctx)
     {
@@ -1889,23 +1889,23 @@ zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_
     }
     BN_CTX_start(ctx);
 
-    const damgard_fujisaki_private_t damgard_fujisaki_priv = 
+    const damgard_fujisaki_private_t damgard_fujisaki_priv =
     {
         {
-            1,                    //dimentions; // number of secrets
+            1,                    //dimensions; // number of secrets
             priv->pub.n,          // public part of p * q
-            (BIGNUM**)&priv->pub.s,         // for each secret labda holds it's public t^labda
+            (BIGNUM**)&priv->pub.s,         // for each secret lambda holds its public t^lambda
             priv->pub.t,          // single t used for all s
-            NULL                  // montegomery context used for calculations
+            NULL                  // montgomery context used for calculations
         },
-        
+
         (BIGNUM**)&priv->lambda, // secrets, same count as pub->dimension
         priv->phi_n,  // (p-1) * (q-1)
         priv->p,
         priv->q,
         BN_CTX_get(ctx)
     };
-    
+
     if (!damgard_fujisaki_priv.qinvp)
     {
         goto cleanup;
@@ -1926,7 +1926,7 @@ zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_
         }
     }
 
-    ret = damgard_fujisaki_parameters_zkp_generate(&damgard_fujisaki_priv, aad, aad_len, challenge_bitlength, serialized_proof, proof_len, proof_real_len);
+    ret = damgard_fujisaki_parameters_zkp_generate(&damgard_fujisaki_priv, aad, aad_len, 1, serialized_proof, proof_len, proof_real_len);
 
 cleanup:
     BN_MONT_CTX_free(damgard_fujisaki_priv.pub.mont); //must manually since manually initialized free
@@ -1936,11 +1936,10 @@ cleanup:
     return ret;
 }
 
-zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_verify(const paillier_commitment_public_key_t *pub, 
-                                                                                       const uint8_t* aad, 
-                                                                                       const uint32_t aad_len, 
-                                                                                       const uint32_t challenge_bitlen, 
-                                                                                       const uint8_t* serialized_proof, 
+zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_verify(const paillier_commitment_public_key_t *pub,
+                                                                                       const uint8_t* aad,
+                                                                                       const uint32_t aad_len,
+                                                                                       const uint8_t* serialized_proof,
                                                                                        const uint32_t proof_len)
 {
     zero_knowledge_proof_status ret = ZKP_OUT_OF_MEMORY;
@@ -1950,7 +1949,7 @@ zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_
     {
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     ctx = BN_CTX_new();
     if (!ctx)
     {
@@ -1958,15 +1957,15 @@ zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_
     }
     BN_CTX_start(ctx);
 
-    const damgard_fujisaki_public_t damgard_fujisaki_pub = 
+    const damgard_fujisaki_public_t damgard_fujisaki_pub =
     {
         1,               // number of secrets
         pub->n,          // public part of p * q
-        (BIGNUM **)&pub->s,         // for each secret labda holds it's public t^labda
+        (BIGNUM **)&pub->s,         // for each secret lambda holds its public t^lambda
         pub->t,          // single t used for all s
-        NULL             // montegomery context used for calculations
+        NULL             // montgomery context used for calculations
     };
-    
+
     if (serialized_proof && proof_len)
     {
         if (RING_PEDERSEN_SUCCESS != damgard_fujisaki_init_montgomery((damgard_fujisaki_public_t*)&damgard_fujisaki_pub, ctx))
@@ -1976,7 +1975,7 @@ zero_knowledge_proof_status paillier_commitment_damgard_fujisaki_parameters_zkp_
         }
     }
 
-    ret = damgard_fujisaki_parameters_zkp_verify(&damgard_fujisaki_pub, aad, aad_len, challenge_bitlen, serialized_proof, proof_len);
+    ret = damgard_fujisaki_parameters_zkp_verify(&damgard_fujisaki_pub, aad, aad_len, 1, serialized_proof, proof_len);
 
 cleanup:
     BN_MONT_CTX_free(damgard_fujisaki_pub.mont); //must manually since manually initialized free

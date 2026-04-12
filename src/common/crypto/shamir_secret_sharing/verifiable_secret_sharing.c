@@ -95,7 +95,7 @@ static verifiable_secret_sharing_status create_shares(const elliptic_curve256_al
         goto cleanup;
 
 
-    // multiply the access matrix and the coefficient vector to get the sharws
+    // multiply the access matrix and the coefficient vector to get the shares
     for (size_t i = 0; i < n; ++i)
     {
         elliptic_curve_algebra_status status;
@@ -145,7 +145,7 @@ static verifiable_secret_sharing_status verifiable_secret_sharing_split_impl(con
     if (!(bn_prime = BN_bin2bn(algebra->order(algebra), ELLIPTIC_CURVE_FIELD_SIZE, NULL)))
         goto cleanup;
     
-    assert(BN_is_prime_ex(bn_prime, 1000, ctx, NULL));
+    assert(BN_is_prime_ex(bn_prime, 1000, ctx, NULL) == 1);
 
     BN_set_flags(bn_prime, BN_FLG_CONSTTIME);
 
@@ -156,7 +156,13 @@ static verifiable_secret_sharing_status verifiable_secret_sharing_split_impl(con
     }
 
     for (size_t i = 0; i < t*n; ++i)
-        BN_mod(access_mat[i], access_mat[i], bn_prime, ctx);
+    {
+        if (!BN_mod(access_mat[i], access_mat[i], bn_prime, ctx))
+        {
+            ret = VERIFIABLE_SECRET_SHARING_UNKNOWN_ERROR;
+            goto cleanup;
+        }
+    }
     
     shares_local->ids = ids;
     
@@ -167,7 +173,7 @@ static verifiable_secret_sharing_status verifiable_secret_sharing_split_impl(con
     }
     else
     {
-        // NULL shares_local->ids so it want be freed by verifiable_secret_sharing_free_shares, as we didn't take ownership over it
+        // NULL shares_local->ids so it won't be freed by verifiable_secret_sharing_free_shares, as we didn't take ownership over it
         shares_local->ids = NULL;
     }
 
@@ -206,7 +212,8 @@ verifiable_secret_sharing_status verifiable_secret_sharing_split(const elliptic_
     one = BN_CTX_get(ctx);
     if (!one)
         goto cleanup;
-    BN_one(one);
+    if (!BN_one(one))
+        goto cleanup;
 
     ids = (uint64_t*)calloc(n, sizeof(uint64_t));
     if (!ids)
@@ -277,7 +284,8 @@ verifiable_secret_sharing_status verifiable_secret_sharing_split_with_custom_ids
     one = BN_CTX_get(ctx);
     if (!one)
         goto cleanup;
-    BN_one(one);
+    if (!BN_one(one))
+        goto cleanup;
 
     local_ids = (uint64_t*)calloc(n, sizeof(uint64_t));
     if (!local_ids)

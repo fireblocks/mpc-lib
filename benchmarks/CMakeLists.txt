@@ -1,0 +1,3 @@
+add_executable(bam_sign_benchmark bam_sign_benchmark.cpp)
+target_link_libraries(bam_sign_benchmark cosigner uuid)
+target_include_directories(bam_sign_benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)

@@ -255,7 +255,7 @@ COSIGNER_EXPORT long paillier_commitment_paillier_blum_zkp_verify(const paillier
 /**
  * @brief return minimal size of "d" prime required for range_proof_paillier_large_factors_quadratic_zkp_generate()
  *
- * This function requires initialized public key and returnes the minimal size in bits required for the "d" safe prime 
+ * This function requires initialized public key and returns the minimal size in bits required for the "d" safe prime 
  *
  * @param[in] pub Pointer to the Paillier public key.
  *
@@ -319,8 +319,7 @@ COSIGNER_EXPORT zero_knowledge_proof_status paillier_commitment_damgard_fujisaki
     const paillier_commitment_private_key_t *priv, 
     const uint8_t* aad, 
     const uint32_t aad_len, 
-    const uint32_t challenge_bitlength, 
-    uint8_t* serialized_proof, 
+     uint8_t* serialized_proof, 
     const uint32_t proof_len, 
     uint32_t* proof_real_len);
 
@@ -330,8 +329,7 @@ COSIGNER_EXPORT zero_knowledge_proof_status paillier_commitment_damgard_fujisaki
  * @param pub Pointer to the public key.
  * @param aad Additional authenticated data for the ZKP.
  * @param aad_len Length of the additional authenticated data.
- * @param challenge_bitlen Length of the ZKP challenge in bits.
- * @param serialized_proof Buffer containing the serialized ZKP.
+  * @param serialized_proof Buffer containing the serialized ZKP.
  * @param proof_len Length of the buffer.
  * @return Status of the ZKP verification (success or error).
  */
@@ -339,7 +337,6 @@ COSIGNER_EXPORT zero_knowledge_proof_status paillier_commitment_damgard_fujisaki
     const paillier_commitment_public_key_t *pub, 
     const uint8_t* aad, 
     const uint32_t aad_len, 
-    const uint32_t challenge_bitlen, 
     const uint8_t* serialized_proof, 
     const uint32_t proof_len);
 

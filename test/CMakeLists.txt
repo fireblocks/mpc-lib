@@ -3,6 +3,7 @@ target_link_libraries(tests_main PUBLIC cosigner)
 
 add_subdirectory(cosigner)
 add_subdirectory(crypto/drng)
+add_subdirectory(crypto/entropy)
 add_subdirectory(crypto/ed25519_algebra)
 add_subdirectory(crypto/paillier)
 add_subdirectory(crypto/secp256k1_algebra)

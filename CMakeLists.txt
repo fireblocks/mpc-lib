@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.13)
 project(mpc-lib LANGUAGES C CXX)
 
+option(MPC_LIB_BUILD_BENCHMARKS "Build benchmarking targets (requires Google Benchmark)" OFF)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -15,4 +17,8 @@ add_subdirectory(src/common)
 if(${CMAKE_SOURCE_DIR} STREQUAL ${PROJECT_SOURCE_DIR} AND NOT MPC_LIB_SKIP_TESTS)
     enable_testing()
     add_subdirectory(test)
+endif()
+
+if(MPC_LIB_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()

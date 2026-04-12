@@ -39,11 +39,12 @@ cmp_mta_message request(const uint64_t my_id,
 elliptic_curve_scalar answer_mta_request(const elliptic_curve256_algebra_ctx_t* algebra, 
                                          const cmp_mta_message& request, 
                                          const uint8_t* secret, 
-                                         uint32_t secret_size, 
+                                         const uint32_t secret_size, 
                                          const byte_vector_t& aad,
                                          const std::shared_ptr<paillier_private_key_t>& my_key, 
                                          const std::shared_ptr<paillier_public_key_t>& paillier, 
                                          const std::shared_ptr<ring_pedersen_public_t>& ring_pedersen, 
+                                         const uint32_t version,
                                          cmp_mta_message& response);
 
 elliptic_curve_scalar decrypt_mta_response(uint64_t other_id, 
@@ -56,7 +57,8 @@ struct mta_range_zkp;
 class base_response_verifier
 {
 public:
-    base_response_verifier(const uint64_t other_id, 
+    base_response_verifier(const uint32_t version,
+                           const uint64_t other_id, 
                            const elliptic_curve256_algebra_ctx_t* algebra, 
                            const byte_vector_t& aad, 
                            const std::shared_ptr<paillier_private_key_t>& my_key, 
@@ -67,6 +69,7 @@ public:
 
 
 protected:
+    const uint32_t _version;
     const uint64_t _other_id;
     const elliptic_curve256_algebra_ctx_t* _algebra;
     const byte_vector_t _aad;
@@ -90,7 +93,8 @@ public:
 class batch_response_verifier : public base_response_verifier
 {
 public:
-    batch_response_verifier(const uint64_t other_id, 
+    batch_response_verifier(const uint32_t version, 
+                            const uint64_t other_id, 
                             const elliptic_curve256_algebra_ctx_t* algebra, 
                             const byte_vector_t& aad, 
                             const std::shared_ptr<paillier_private_key_t>& my_key, 
@@ -153,6 +157,7 @@ private:
 };
 
 static inline std::unique_ptr<base_response_verifier> new_response_verifier(
+    const uint32_t version,
     const size_t num_of_blocks,
     const uint64_t other_id, 
     const elliptic_curve256_algebra_ctx_t* algebra, 
@@ -164,11 +169,11 @@ static inline std::unique_ptr<base_response_verifier> new_response_verifier(
 {
     if (num_of_blocks >= min_batch_threshold)
     {
-        return std::unique_ptr<base_response_verifier>(new batch_response_verifier(other_id, algebra, aad, my_key, paillier, ring_pedersen));
+        return std::unique_ptr<base_response_verifier>(new batch_response_verifier(version, other_id, algebra, aad, my_key, paillier, ring_pedersen));
     }
     else
     {
-        return std::unique_ptr<base_response_verifier>(new single_response_verifier(other_id, algebra, aad, my_key, paillier, ring_pedersen));
+        return std::unique_ptr<base_response_verifier>(new single_response_verifier(version, other_id, algebra, aad, my_key, paillier, ring_pedersen));
     }
 }
 

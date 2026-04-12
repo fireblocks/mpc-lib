@@ -1,4 +1,4 @@
-#include "status_convert.h"
+#include "crypto/algebra_utils/status_convert.h"
 
 ring_pedersen_status algebra_to_ring_pedersen_status(const elliptic_curve_algebra_status status)
 {
@@ -23,7 +23,7 @@ zero_knowledge_proof_status convert_drng_to_zkp_status(const drng_status status)
     case DRNG_SUCCESS:              return ZKP_SUCCESS;
     case DRNG_INVALID_PARAMETER:    return ZKP_INVALID_PARAMETER;
     case DRNG_OUT_OF_MEMORY:        return ZKP_OUT_OF_MEMORY;
-    case DRNG_INTERNAL_ERROR:       // fallthough
+    case DRNG_INTERNAL_ERROR:       // fallthrough
     default:                        return ZKP_UNKNOWN_ERROR;
     }
 }

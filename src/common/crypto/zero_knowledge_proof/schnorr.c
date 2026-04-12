@@ -51,14 +51,17 @@ static zero_knowledge_proof_status schnorr_zkp_generate_impl(const elliptic_curv
 
     status = algebra->mul_scalars(algebra, &c, secret, secret_size, c, sizeof(c));
     if (status != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return from_elliptic_curve_algebra_status(status);
+        goto cleanup;
 
     status = algebra->sub_scalars(algebra, &proof->s, k, sizeof(k), c, sizeof(c));
-    OPENSSL_cleanse(k, sizeof(k));
     if (status != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return from_elliptic_curve_algebra_status(status);
+        goto cleanup;
 
-    return ZKP_SUCCESS;
+    status = ELLIPTIC_CURVE_ALGEBRA_SUCCESS;
+cleanup:
+    OPENSSL_cleanse(k, sizeof(k));
+    OPENSSL_cleanse(c, sizeof(c));   
+    return from_elliptic_curve_algebra_status(status);
 }
 
 zero_knowledge_proof_status schnorr_zkp_generate(const elliptic_curve256_algebra_ctx_t *algebra, const uint8_t *prover_id, uint32_t id_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_point_t *public_data, schnorr_zkp_t *proof)

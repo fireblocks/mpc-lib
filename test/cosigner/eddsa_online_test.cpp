@@ -47,8 +47,8 @@ private:
     const std::string get_current_tenantid() const override {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
     void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override {assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {assert(0);}
-    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {assert(0);}
+    byte_vector_t encrypt_for_player(const uint64_t id, const byte_vector_t& data, const std::optional<std::string>& verify_modulus = std::nullopt) const override {return data;}
+    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {return encrypted_data;}
     bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
     void on_start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const signing_type signature_type) override {}
     void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override
@@ -56,7 +56,20 @@ private:
         for (auto i = flags.begin(); i != flags.end(); ++i)
             *i = _use_keccak ? EDDSA_KECCAK : 0;
     }
+    void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const override
+    {
+        for (auto& sig : info)
+            sig.flags = _use_keccak ? EDDSA_KECCAK : 0;
+    }
+    
+    void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const override
+    {
+        // Stub for tests
+    }
     bool is_client_id(uint64_t player_id) const override {return false;}
+    void mark_key_setup_in_progress(const std::string& key_id) const override {}
+    void clear_key_setup_in_progress(const std::string& key_id) const override {}
+    void prepare_for_signing(const std::string& key_id, const std::string tx_id) override {}
 
     const uint64_t _id;
     const bool _use_keccak;
@@ -64,30 +77,30 @@ private:
 
 class eddsa_signing_persistency : public eddsa_online_signing_service::signing_persistency
 {
-    void store_signing_data(const std::string& txid, const eddsa_signing_metadata& data) override
+    void store_eddsa_signing_data(const std::string& txid, const std::shared_ptr<eddsa_signing_metadata>& data) override
     {
         std::unique_lock lock(_mutex);
         if (_metadata.find(txid) != _metadata.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        _metadata[txid] = data;
+        _metadata[txid] = *data;
     }
 
-    void load_signing_data(const std::string& txid, eddsa_signing_metadata& data) const override
+    std::shared_ptr<eddsa_signing_metadata> load_eddsa_signing_data(const std::string& txid) const override
     {
         std::shared_lock lock(_mutex);
         auto it = _metadata.find(txid);
         if (it == _metadata.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        data = it->second;
+        return std::make_shared<eddsa_signing_metadata>(it->second);
     }
 
-    void update_signing_data(const std::string& txid, const eddsa_signing_metadata& data) override
+    void update_eddsa_signing_data(const std::string& txid, const std::shared_ptr<eddsa_signing_metadata>& data) override
     {
         std::unique_lock lock(_mutex);
         auto it = _metadata.find(txid);
         if (it == _metadata.end())
             throw cosigner_exception(cosigner_exception::INVALID_TRANSACTION);
-        it->second = data;
+        it->second = *data;
     }
 
     void store_signing_commitments(const std::string& txid, const std::map<uint64_t, std::vector<commitment>>& commitments) override
@@ -107,11 +120,12 @@ class eddsa_signing_persistency : public eddsa_online_signing_service::signing_p
         commitments = it->second;
     }
     
-    void delete_temporary_signing_data(const std::string& txid) override
+    bool delete_eddsa_signing_data(const std::string& txid) override
     {
         std::unique_lock lock(_mutex);
         _metadata.erase(txid);
         _commitments.erase(txid);
+        return true;
     }
 
     mutable std::shared_mutex _mutex;
@@ -121,14 +135,20 @@ class eddsa_signing_persistency : public eddsa_online_signing_service::signing_p
 
 struct eddsa_siging_info
 {
-    eddsa_siging_info(uint64_t id, const cmp_key_persistency& persistency, bool positive_r) : platform_service(id, positive_r), signing_service(platform_service, persistency, signing_persistency) {}
+    eddsa_siging_info(uint64_t id, cmp_key_persistency& persistency, bool positive_r) : platform_service(id, positive_r), signing_service(platform_service, persistency, signing_persistency) {}
     eddsa_sign_platform platform_service;
     eddsa_signing_persistency signing_persistency;
     eddsa_online_signing_service signing_service;
 };
 
-static void eddsa_sign(players_setup_info& players, const std::string& keyid, uint32_t count, const elliptic_curve256_point_t& pubkey, 
-    const byte_vector_t& chaincode, const std::vector<std::vector<uint32_t>>& paths, bool keccek = false)
+static void eddsa_sign(players_setup_info& players, 
+                       const std::string& keyid, 
+                       uint32_t count, 
+                       const elliptic_curve256_point_t& pubkey, 
+                       const byte_vector_t& chaincode, 
+                       const std::vector<std::vector<uint32_t>>& paths, 
+                       bool keccek,
+                       uint32_t version)
 {
     uuid_t uid;
     char txid[37] = {0};
@@ -172,10 +192,10 @@ static void eddsa_sign(players_setup_info& players, const std::string& keyid, ui
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         auto& R = Rs[i->first];
-        REQUIRE_NOTHROW(i->second->signing_service.store_commitments(txid, commitments, MPC_CMP_ONLINE_VERSION, R));
+        REQUIRE_NOTHROW(i->second->signing_service.store_commitments(txid, commitments, version, R));
 
         std::vector<elliptic_curve_point> repeat_Rs;
-        REQUIRE_THROWS_AS(i->second->signing_service.store_commitments(txid, commitments, MPC_CMP_ONLINE_VERSION, repeat_Rs), cosigner_exception);
+        REQUIRE_THROWS_AS(i->second->signing_service.store_commitments(txid, commitments, version, repeat_Rs), cosigner_exception);
     }
     commitments.clear();
 
@@ -231,7 +251,7 @@ static void* sign_thread(void* arg)
     byte_vector_t chaincode(32, '\0');
     std::vector<uint32_t> path = {44, 0, 0, 0, 0};
 
-    eddsa_sign(param->players, param->keyid, 1, param->pubkey, chaincode, {path});
+    eddsa_sign(param->players, param->keyid, 1, param->pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     return NULL;
 }
 
@@ -250,12 +270,12 @@ TEST_CASE("eddsa") {
         uuid_unparse(uid, keyid);
         players[1];
         players[2];
-        create_secret(players, EDDSA_ED25519, keyid, pubkey);
+        create_secret(players, EDDSA_ED25519, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("sign") {
         auto before = Clock::now();
-        eddsa_sign(players, keyid, 1, pubkey, chaincode, {path});
+        eddsa_sign(players, keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         auto after = Clock::now();
         std::cout << "EDDSA signing took: " << std::chrono::duration_cast<std::chrono::milliseconds>(after - before).count() << " ms" << std::endl;
     }
@@ -269,8 +289,8 @@ TEST_CASE("eddsa") {
         new_players[11];
         new_players[12];
         new_players[13];
-        add_user(players, new_players, EDDSA_ED25519, keyid, new_keyid, pubkey);
-        eddsa_sign(new_players, new_keyid, 1, pubkey, chaincode, {path});
+        add_user(players, new_players, EDDSA_ED25519, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+        eddsa_sign(new_players, new_keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("sign multiple") {
@@ -283,7 +303,7 @@ TEST_CASE("eddsa") {
             derivation_paths.push_back(derivation_path);
             ++derivation_path[2];
         }
-        eddsa_sign(players, keyid, COUNT, pubkey, chaincode, derivation_paths);
+        eddsa_sign(players, keyid, COUNT, pubkey, chaincode, derivation_paths, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("MT") {
@@ -302,9 +322,9 @@ TEST_CASE("eddsa") {
         std::cout << "Done in " << std::chrono::duration_cast<std::chrono::milliseconds>(finish - start).count() << " ms" << std::endl;
     }
 
-    SECTION("keccek") {
+    SECTION("keccak") {
         // run 4 times as R has 50% chance of being negative
         for (size_t i = 0; i < 8; ++i)
-            eddsa_sign(players, keyid, 1, pubkey, chaincode, {path}, true);;
+            eddsa_sign(players, keyid, 1, pubkey, chaincode, {path}, true, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);;
     }
 }

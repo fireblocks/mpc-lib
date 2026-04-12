@@ -10,11 +10,11 @@ struct paillier_commitment_public_key
 {
     BIGNUM* n;          // public key n = p * q
     BIGNUM* t;          // damgard fujisaki generator, also used as rho0 in paillier
-    BIGNUM* s;          // damgard fujisaki t^lamda in mod n^2 public. Also used in paillier encryption
-    BIGNUM* n2;         // calcualted n^2
+    BIGNUM* s;          // damgard fujisaki t^lambda in mod n^2 public. Also used in paillier encryption
+    BIGNUM* n2;         // calculated n^2
     BIGNUM* rho;        // t^n mod n^2 - either restored or calculated. used as rho in paillier
     BIGNUM* sigma_0;    // (1 + n) * s^n mod n^2 - either restored or calculated
-    BN_MONT_CTX* mont_n2;  // montegomery context used for in mod n^2
+    BN_MONT_CTX* mont_n2;  // montgomery context used for in mod n^2
 };
 
 struct paillier_commitment_private_key
@@ -26,7 +26,7 @@ struct paillier_commitment_private_key
     BIGNUM* p2;         // calculated - holds (p^2)
     BIGNUM* q2;         // calculated - holds (q^2)
     BIGNUM* q2_inv_p2;  // calculated - holds (q^2^-1) mod (p^2)
-    BIGNUM* phi_n;      // calculated - phi(n) also known as lamda in paillier 
+    BIGNUM* phi_n;      // calculated - phi(n) also known as lambda in paillier 
     BIGNUM* phi_n_inv;  // calculated - phi(n) ^ 1 in mod(n) also known as mu in paillier
     
 };

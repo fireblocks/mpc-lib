@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cosigner_export.h"
 #include <map>
 #include <mutex>
 #include <optional>
@@ -11,7 +12,7 @@ namespace common
 namespace cosigner
 {
 
-class TimingMap final
+class COSIGNER_EXPORT TimingMap final
 {
 public:
     TimingMap(platform_service& platform_service);

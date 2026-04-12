@@ -17,7 +17,7 @@ commitments_status commitments_create_commitment_for_data(const uint8_t *data, u
     SHA256_CTX ctx;
     if (!data || !data_len || !commitment)
         return COMMITMENTS_INVALID_PARAMETER;
-    if (!RAND_bytes(commitment->salt, sizeof(commitments_sha256_t)))
+    if (RAND_bytes(commitment->salt, sizeof(commitments_sha256_t)) != 1)
         return COMMITMENTS_INTERNAL_ERROR;
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, commitment->salt, sizeof(commitments_sha256_t));
@@ -49,7 +49,7 @@ commitments_status commitments_ctx_commitment_new(commitments_ctx_t **ctx)
     local_ctx = (commitments_ctx_t*)malloc(sizeof(commitments_ctx_t));
     if (!local_ctx)
         return COMMITMENTS_OUT_OF_MEMORY;
-    if (!RAND_bytes(local_ctx->commitment, sizeof(commitments_sha256_t)))
+    if (RAND_bytes(local_ctx->commitment, sizeof(commitments_sha256_t)) != 1)
     {
         free(local_ctx);
         return COMMITMENTS_INTERNAL_ERROR;
