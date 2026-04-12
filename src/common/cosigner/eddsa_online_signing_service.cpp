@@ -5,9 +5,9 @@
 #include "cosigner/platform_service.h"
 #include "utils.h"
 #include "logging/logging_t.h"
-
 #include <inttypes.h>
-#include <openssl/crypto.h>
+#include <openssl/bn.h>
+
 
 namespace fireblocks
 {
@@ -31,22 +31,11 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
 
 const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> eddsa_online_signing_service::_ed25519(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
 
-eddsa_online_signing_service::signing_persistency::~signing_persistency()
-{
-}
-
-eddsa_online_signing_service::eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& preprocessing_persistency):
-    _service(service),
-    _key_persistency(key_persistency),
-    _signing_persistency(preprocessing_persistency),
-    _timing_map(service) {}
-
-
 void eddsa_online_signing_service::start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<commitment>& commitments)
 {
-    (void)players; // UNUSED
-
     LOG_INFO("Entering txid = %s", txid.c_str());
+    _service.prepare_for_signing(key_id, txid);
+
     commitments.clear();
     verify_tenant_id(_service, _key_persistency, key_id);
     cmp_key_metadata metadata;
@@ -55,20 +44,21 @@ void eddsa_online_signing_service::start_signing(const std::string& key_id, cons
     if (metadata.algorithm != EDDSA_ED25519)
     {
         LOG_ERROR("key %s has algorithm %s, but the request is for eddsa", key_id.c_str(), to_string(metadata.algorithm));
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     if (players_ids.size() < metadata.t)
     {
         LOG_ERROR("invalid number of signers for keyid = %s, txid = %s, signers = %lu", key_id.c_str(), txid.c_str(), players_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
+
     for (auto i = players_ids.begin(); i != players_ids.end(); ++i)
     {
         if (metadata.players_info.find(*i) == metadata.players_info.end())
         {
             LOG_ERROR("playerid %" PRIu64 " not part of key, for keyid = %s, txid = %s", *i, key_id.c_str(), txid.c_str());
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
 
@@ -82,19 +72,22 @@ void eddsa_online_signing_service::start_signing(const std::string& key_id, cons
     if (blocks > MAX_BLOCKS_TO_SIGN)
     {
         LOG_ERROR("got too many blocks to sign %lu", blocks);
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     LOG_INFO("Starting signing process keyid = %s, txid = %s", key_id.c_str(), txid.c_str());
-    eddsa_signing_metadata info = {key_id};
+    auto metadata_ptr = std::shared_ptr<eddsa_signing_metadata>(new eddsa_signing_metadata{key_id});
+    auto &info = *metadata_ptr;
+
     memcpy(info.chaincode, data.chaincode, sizeof(HDChaincode));
     info.signers_ids.insert(players_ids.begin(), players_ids.end());
     info.version = common::cosigner::MPC_PROTOCOL_VERSION;
 
     commitments.reserve(blocks);
     info.sig_data.reserve(blocks);
+    info.timestamp = _service.now_msec();
 
-    
+
     for (size_t i = 0; i < blocks; i++)
     {
         elliptic_curve_scalar k;
@@ -111,22 +104,20 @@ void eddsa_online_signing_service::start_signing(const std::string& key_id, cons
         sigdata.flags = NONE;
         info.sig_data.push_back(sigdata);
     }
-    std::vector<uint32_t> flags(blocks, 0);
-    _service.fill_signing_info_from_metadata(metadata_json, flags);
-    for (size_t i = 0; i < blocks; i++)
-        info.sig_data[i].flags = flags[i];
-    _signing_persistency.store_signing_data(txid, info);
+
+    _service.fill_eddsa_signing_info_from_metadata(info.sig_data, metadata_json);
+    _signing_persistency.store_eddsa_signing_data(txid, metadata_ptr);
 }
 
-uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid, const std::map<uint64_t, std::vector<commitment>>& commitments, uint32_t version, std::vector<elliptic_curve_point>& R)
+uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid, const commitments_map& commitments, uint32_t version, std::vector<elliptic_curve_point>& R)
 {
     LOG_INFO("Entering txid = %s", txid.c_str());
 
     R.clear();
-    eddsa_signing_metadata data;
-    _signing_persistency.load_signing_data(txid, data);
+    auto metadata_ptr = _signing_persistency.load_eddsa_signing_data(txid);
+    auto & data = *metadata_ptr;
     verify_tenant_id(_service, _key_persistency, data.key_id);
-    
+
 #ifndef MOBILE
     {
         _timing_map.insert(txid);
@@ -138,15 +129,15 @@ uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid
 
     if (data.signers_ids.size() != commitments.size())
     {
-        LOG_ERROR("commitments size %lu is different then expected size %lu", commitments.size(), data.signers_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        LOG_ERROR("commitments size %lu is different than expected size %lu", commitments.size(), data.signers_ids.size());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     for (auto i = data.signers_ids.begin(); i != data.signers_ids.end(); ++i)
     {
         if (commitments.find(*i) == commitments.end())
         {
             LOG_ERROR("commitment for player %" PRIu64 " not found in commitments list", *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS); 
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
     for (auto i = commitments.begin(); i != commitments.end(); ++i)
@@ -154,7 +145,7 @@ uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid
         if (i->second.size() != data.sig_data.size())
         {
             LOG_ERROR("commitment for player %" PRIu64 " size %lu is different from block size %lu", i->first, i->second.size(), data.sig_data.size());
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS); 
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
 
@@ -171,7 +162,7 @@ uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid
     if (data.version != version)
     {
         data.version = version;
-        _signing_persistency.update_signing_data(txid, data);
+        _signing_persistency.update_eddsa_signing_data(txid, metadata_ptr);
     }
     _signing_persistency.store_signing_commitments(txid, commitments);
     return my_id;
@@ -180,23 +171,23 @@ uint64_t eddsa_online_signing_service::store_commitments(const std::string& txid
 uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, const std::map<uint64_t, std::vector<elliptic_curve_point>>& Rs, std::vector<elliptic_curve_scalar>& si)
 {
     LOG_INFO("Entering txid = %s", txid.c_str());
-    eddsa_signing_metadata data;
-    _signing_persistency.load_signing_data(txid, data);
+    auto metadata_ptr = _signing_persistency.load_eddsa_signing_data(txid);
+    auto & data = *metadata_ptr;
     verify_tenant_id(_service, _key_persistency, data.key_id);
 
     const uint64_t my_id = _service.get_id_from_keyid(data.key_id);
 
     if (data.signers_ids.size() != Rs.size())
     {
-        LOG_ERROR("commitments size %lu is different then expected size %lu", Rs.size(), data.signers_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        LOG_ERROR("commitments size %lu is different than expected size %lu", Rs.size(), data.signers_ids.size());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     for (auto i = data.signers_ids.begin(); i != data.signers_ids.end(); ++i)
     {
         if (Rs.find(*i) == Rs.end())
         {
             LOG_ERROR("commitment for player %" PRIu64 " not found in commitments list", *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS); 
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
     for (auto i = Rs.begin(); i != Rs.end(); ++i)
@@ -204,21 +195,27 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
         if (i->second.size() != data.sig_data.size())
         {
             LOG_ERROR("commitment for player %" PRIu64 " size %lu is different from block size %lu", i->first, i->second.size(), data.sig_data.size());
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS); 
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
 
     // validate decommitments
-    std::map<uint64_t, std::vector<commitment>> commitments;
+    commitments_map commitments;
     _signing_persistency.load_signing_commitments(txid, commitments);
 
+    if (commitments.empty())
+    {
+        LOG_ERROR("Empty commitments");
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+
+    }
     for (auto i = commitments.begin(); i != commitments.end(); ++i)
     {
         auto it = Rs.find(i->first);
         if (it == Rs.end())
         {
             LOG_ERROR("R from player %" PRIu64" missing", i->first);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
         for (size_t j = 0; j < data.sig_data.size(); ++j)
@@ -226,7 +223,7 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
             if (commitments_verify_commitment(it->second[j].data, sizeof(elliptic_curve256_point_t), &i->second[j].data) != COMMITMENTS_SUCCESS)
             {
                 LOG_ERROR("failed to verify gamma commitment for player %" PRIu64, i->first);
-                throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+                throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
             }
         }
     }
@@ -242,9 +239,8 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
     if (algo != metadata.algorithm)
     {
         LOG_FATAL("key algorithm %d is different from the key metadata algorithm %d", algo, metadata.algorithm);
-        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
-    
     elliptic_curve_scalar x;
 
     for (size_t i = 0; i < data.sig_data.size(); ++i)
@@ -271,7 +267,7 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
             if (derivation_status != HD_DERIVE_SUCCESS)
             {
                 LOG_ERROR("failed to derive public key for block %lu, error %d", i, derivation_status);
-                throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+                throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
             }
         }
         else
@@ -296,7 +292,7 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
         si.push_back(data.sig_data[i].s);
     }
 
-    _signing_persistency.update_signing_data(txid, data);
+    _signing_persistency.update_eddsa_signing_data(txid, metadata_ptr);
 
     return my_id;
 }
@@ -304,15 +300,15 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
 uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& txid, const std::map<uint64_t, std::vector<elliptic_curve_scalar>>& s, std::vector<eddsa_signature>& sig)
 {
     LOG_INFO("Entering txid = %s", txid.c_str());
-    eddsa_signing_metadata data;
-    _signing_persistency.load_signing_data(txid, data);
+    auto metadata_ptr = _signing_persistency.load_eddsa_signing_data(txid);
+    auto & data = *metadata_ptr;
     verify_tenant_id(_service, _key_persistency, data.key_id);
     uint64_t my_id = _service.get_id_from_keyid(data.key_id);
 
     if (s.size() != data.signers_ids.size())
     {
         LOG_ERROR("got wrong number of s, got %lu expected %lu", s.size(), data.signers_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     const std::vector<elliptic_curve_scalar>* my_s = NULL;
     for (auto i = data.signers_ids.begin(); i != data.signers_ids.end(); ++i)
@@ -321,12 +317,12 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
         if (it == s.end())
         {
             LOG_ERROR("s from player %" PRIu64 " missing", *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (it->second.size() != data.sig_data.size())
         {
             LOG_ERROR("number of s (%lu) from player %" PRIu64 " is different from block size %lu", it->second.size(), *i, data.sig_data.size());
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS); 
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (*i == my_id)
             my_s = &it->second;
@@ -335,7 +331,7 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
     if (my_s == NULL)
     {
         LOG_ERROR("inconsistent state detected in persistent storage");
-        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
 
     sig.clear();
@@ -349,8 +345,8 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
     {
         if (memcmp(my_s->at(index).data, &data.sig_data[index].s.data, sizeof(elliptic_curve_scalar)) != 0)
         {
-            LOG_ERROR("missmatch between my stored s and broadcasted s");
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            LOG_ERROR("mismatch between my stored s and broadcasted s");
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
 
         elliptic_curve256_scalar_t s_sum = {0};
@@ -360,7 +356,7 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
 
         eddsa_signature cur_sig;
         memcpy(cur_sig.R, data.sig_data[index].R.data, sizeof(ed25519_point_t));
-        ed25519_algebra_be_to_le(&cur_sig.s, &s_sum);
+        throw_cosigner_exception(ed25519_algebra_be_to_le(&cur_sig.s, &s_sum));
 
         // verify signature
         elliptic_curve256_point_t derived_public_key;
@@ -368,7 +364,7 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
         if (derivation_status != HD_DERIVE_SUCCESS)
         {
             LOG_ERROR("failed to derive public key for block %lu, error %d", index, derivation_status);
-            throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
         }
         unsigned char raw_sig[64];
         memcpy(raw_sig, cur_sig.R, 32);
@@ -380,13 +376,13 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
         else
         {
             LOG_FATAL("failed to verify signature for block %lu, error %d", index, derivation_status);
-            throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
         }
 
         sig.push_back(cur_sig);
     }
 
-    _signing_persistency.delete_temporary_signing_data(txid);
+    _signing_persistency.delete_eddsa_signing_data(txid);
 
     const std::optional<const uint64_t> diff = _timing_map.extract(txid);
     if (!diff)
@@ -395,10 +391,107 @@ uint64_t eddsa_online_signing_service::get_eddsa_signature(const std::string& tx
     }
     else
     {
+        static const std::string ALGORITHM("additive EdDSA");
         LOG_INFO("Finished signing %lu blocks for transaction %s (tenant %s) in %" PRIu64 "ms", sig.size(), txid.c_str(), _service.get_current_tenantid().c_str(), *diff);
+        _service.report_signing_time(ALGORITHM, *diff, sig.size());
     }
 
     return my_id;
+}
+
+void eddsa_online_signing_service::cancel_signing(const std::string& txid)
+{
+    _signing_persistency.delete_eddsa_signing_data(txid);
+    _timing_map.erase(txid);
+}
+
+class BN_CTX_guard
+{
+public:
+    [[nodiscard]] explicit BN_CTX_guard()
+    {
+        _ctx = BN_CTX_secure_new();
+        if (!_ctx)
+            throw_cosigner_exception(cosigner_exception::NO_MEM);
+        BN_CTX_start(_ctx);
+    }
+
+    ~BN_CTX_guard()
+    {
+        BN_CTX_end(_ctx);
+        BN_CTX_free(_ctx);
+    }
+
+    [[nodiscard]] BN_CTX* get() const {return _ctx;}
+
+    BN_CTX_guard(const BN_CTX_guard&) = delete;
+    BN_CTX_guard& operator=(const BN_CTX_guard&) = delete;
+    BN_CTX_guard(BN_CTX_guard&&) = delete;
+    BN_CTX_guard& operator=(BN_CTX_guard&&) = delete;
+private:
+    BN_CTX* _ctx;
+};
+
+void eddsa_online_signing_service::calc_w(elliptic_curve_scalar& x, uint64_t my_id, const std::set<uint64_t>& ids)
+{
+    BN_CTX_guard ctx;
+    BIGNUM* bn_w = BN_CTX_get(ctx.get());
+    BIGNUM* tmp = BN_CTX_get(ctx.get());
+    BIGNUM* bn_other_id = BN_CTX_get(ctx.get());
+    BIGNUM* bn_my_id = BN_CTX_get(ctx.get());
+
+    if (!bn_w || !tmp || !bn_other_id || !bn_my_id)
+        throw_cosigner_exception(cosigner_exception::NO_MEM);
+
+    if (!BN_one(bn_w))
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    if (!BN_set_word(bn_my_id, my_id))
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+
+    const BIGNUM* field = _ed25519->order_internal(_ed25519.get());
+
+    for (auto it = ids.begin(); it != ids.end(); ++it)
+    {
+        uint64_t other_id = *it;
+        if (other_id == my_id)
+            continue;
+
+        if (!BN_set_word(bn_other_id, other_id))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+
+        // tmp  = other_id - my_id
+        if (!BN_mod_sub_quick(tmp, bn_other_id, bn_my_id, field))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+
+        // tmp = inverse(tmp) = inverse(other_id - my_id)
+        if (!BN_mod_inverse(tmp, tmp, field, ctx.get()))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+
+        // tmp *= other_id
+        // tmp = other_id * inverse(other_id - my_id) = other_id/(other_id - my_id)
+        if (!BN_mod_mul(tmp, tmp, bn_other_id, field, ctx.get()))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+
+        // product *= tmp
+        if (!BN_mod_mul(bn_w, bn_w, tmp, field, ctx.get()))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    BN_set_flags(bn_w, BN_FLG_CONSTTIME);
+    BN_set_flags(tmp, BN_FLG_CONSTTIME);
+
+    if (!BN_bin2bn(x.data, sizeof(elliptic_curve256_scalar_t), tmp))
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    if (!BN_mod_mul(bn_w, bn_w, tmp, field, ctx.get()))
+    {
+        BN_clear(tmp);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    BN_clear(tmp);
+    int bytes = BN_bn2binpad(bn_w, x.data, sizeof(elliptic_curve256_scalar_t));
+    BN_clear(bn_w);
+    if (bytes <= 0)
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
 }
 
 }

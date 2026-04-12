@@ -877,7 +877,7 @@ elliptic_curve_algebra_status GFp_curve_algebra_verify_signature(const GFp_curve
 
     cmp = BN_cmp(u1, order);
 
-    if (cmp >= 0 && !BN_usub(u1, order, u1))
+    if (cmp >= 0 && !BN_sub(u1, u1, order))
         goto cleanup;
     
     /*  if the signature is correct u1 is equal to sig_r */
@@ -920,6 +920,61 @@ static const elliptic_curve256_point_t *infinity_point(const struct elliptic_cur
     (void)(ctx);
     static const elliptic_curve256_point_t INFINITY = {0};
     return &INFINITY;
+}
+
+static elliptic_curve_algebra_status validate_non_infinity_point(const struct elliptic_curve256_algebra_ctx *ctx, const elliptic_curve256_point_t *p)
+{
+    GFp_curve_algebra_ctx_t* ctx_ = NULL;
+    BN_CTX* bn_ctx = NULL;
+    EC_POINT* point = NULL;
+
+    if (!ctx || !p)
+        return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
+    if (ctx->type != ELLIPTIC_CURVE_SECP256K1 && ctx->type != ELLIPTIC_CURVE_SECP256R1 && ctx->type != ELLIPTIC_CURVE_STARK)
+        return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
+
+    /*
+     * IMPORTANT: This file intentionally treats any encoding whose first byte is 0x00
+     * as the point at infinity, by parsing it with length 1 via SIZEOF_POINT(p).
+     * That means that {0x00, <garbage>} is still interpreted as infinity by
+     * add/mul/verify paths. `validate_non_infinity_point()` must reject these infinity encodings (while
+     * still matching the parsing semantics elsewhere).
+     */
+    if ((*p)[0] == 0)
+        return ELLIPTIC_CURVE_ALGEBRA_INVALID_POINT; // infinity is not a valid point for callers
+
+    ctx_ = (GFp_curve_algebra_ctx_t*)ctx->ctx;
+    if (!ctx_ || !ctx_->curve)
+        return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
+
+    bn_ctx = BN_CTX_new();
+    if (!bn_ctx)
+        return ELLIPTIC_CURVE_ALGEBRA_OUT_OF_MEMORY;
+
+    point = EC_POINT_new(ctx_->curve);
+    if (!point)
+    {
+        BN_CTX_free(bn_ctx);
+        return ELLIPTIC_CURVE_ALGEBRA_OUT_OF_MEMORY;
+    }
+
+    if (!EC_POINT_oct2point(ctx_->curve, point, *p, SIZEOF_POINT(*p), bn_ctx))
+    {
+        EC_POINT_free(point);
+        BN_CTX_free(bn_ctx);
+        return ELLIPTIC_CURVE_ALGEBRA_INVALID_POINT;
+    }
+
+    if (EC_POINT_is_at_infinity(ctx_->curve, point) == 1)
+    {
+        EC_POINT_free(point);
+        BN_CTX_free(bn_ctx);
+        return ELLIPTIC_CURVE_ALGEBRA_INVALID_POINT;
+    }
+
+    EC_POINT_free(point);
+    BN_CTX_free(bn_ctx);
+    return ELLIPTIC_CURVE_ALGEBRA_SUCCESS;
 }
 
 static const uint8_t *secp256k1_order(const elliptic_curve256_algebra_ctx_t *ctx)
@@ -1231,7 +1286,7 @@ static elliptic_curve_algebra_status simple_hash_to_curve(const struct elliptic_
         // Convert hash to a big number and reduce modulo the field size
         if (!BN_bin2bn(hash, sizeof(hash), tmp) || 
             !BN_mod(tmp, tmp, field_size, ctx) ||
-            !BN_bn2binpad(tmp, point + 1, sizeof(point) - 1))
+            BN_bn2binpad(tmp, point + 1, sizeof(point) - 1) <= 0)
         {
             goto cleanup;
         }
@@ -1280,6 +1335,7 @@ elliptic_curve256_algebra_ctx_t* elliptic_curve256_new_secp256k1_algebra()
     ctx->order = secp256k1_order;
     ctx->point_size = point_size;
     ctx->infinity_point = infinity_point;
+    ctx->validate_non_infinity_point = validate_non_infinity_point;
     ctx->generator_mul_data = generate_proof_for_data;
     ctx->verify = verify;
     ctx->verify_linear_combination = verify_linear_combination;
@@ -1309,6 +1365,7 @@ elliptic_curve256_algebra_ctx_t* elliptic_curve256_new_secp256r1_algebra()
     ctx->order = secp256r1_order;
     ctx->point_size = point_size;
     ctx->infinity_point = infinity_point;
+    ctx->validate_non_infinity_point = validate_non_infinity_point;
     ctx->generator_mul_data = generate_proof_for_data;
     ctx->verify = verify;
     ctx->verify_linear_combination = verify_linear_combination;
@@ -1338,6 +1395,7 @@ elliptic_curve256_algebra_ctx_t* elliptic_curve256_new_stark_algebra()
     ctx->order = stark_order;
     ctx->point_size = point_size;
     ctx->infinity_point = infinity_point;
+    ctx->validate_non_infinity_point = validate_non_infinity_point;
     ctx->generator_mul_data = generate_proof_for_data;
     ctx->verify = verify;
     ctx->verify_linear_combination = verify_linear_combination;

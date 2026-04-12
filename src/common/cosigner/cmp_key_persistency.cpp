@@ -7,10 +7,6 @@ namespace common
 namespace cosigner
 {
 
-cmp_key_persistency::~cmp_key_persistency()
-{
-}
-
 }
 }
 }

@@ -103,7 +103,8 @@ protected:
                                                 const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, 
                                                 size_t index, 
                                                 const elliptic_curve_scalar& key, 
-                                                const auxiliary_keys& aux_keys);
+                                                const auxiliary_keys& aux_keys,
+                                                const uint32_t version);
 
     static cmp_mta_deltas verify_block_and_get_delta(ecdsa_preprocessing_data& data, 
                                                      const elliptic_curve256_algebra_ctx_t* algebra, 
@@ -114,6 +115,7 @@ protected:
                                                      const std::map<uint64_t, cmp_mta_responses>& mta_responses, 
                                                      size_t index, 
                                                      const auxiliary_keys& aux_keys, 
+                                                     const uint32_t version,
                                                      std::map<uint64_t, std::unique_ptr<mta::base_response_verifier>>& verifiers);
 
     static void calc_R(ecdsa_preprocessing_data& data, elliptic_curve_point& R, const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::string& uuid, const cmp_key_metadata& metadata,

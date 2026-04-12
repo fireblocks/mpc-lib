@@ -1,4 +1,4 @@
-FROM ubuntu:24.04
+FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -12,4 +12,4 @@ RUN apt-get update && apt install -y \
     && rm -rf /var/cache/apt/archives/*
 
 COPY . /usr/src/mpc-lib/
-WORKDIR /usr/src/mpc-lib/
+WORKDIR /usr/src/mpc-lib

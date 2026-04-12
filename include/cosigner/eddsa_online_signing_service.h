@@ -38,6 +38,8 @@ struct eddsa_signing_metadata
     std::vector<eddsa_signature_data> sig_data;
     std::set<uint64_t> signers_ids;
     uint32_t version;
+    int64_t timestamp;
+    commitments_map commitments;
 };
 
 class COSIGNER_EXPORT eddsa_online_signing_service final
@@ -46,27 +48,25 @@ public:
     class signing_persistency
     {
     public:
-        virtual ~signing_persistency();
-        virtual void store_signing_data(const std::string& txid, const eddsa_signing_metadata& data) = 0;
-        virtual void load_signing_data(const std::string& txid, eddsa_signing_metadata& data) const = 0;
-        virtual void update_signing_data(const std::string& txid, const eddsa_signing_metadata& data) = 0;
-        virtual void store_signing_commitments(const std::string& txid, const std::map<uint64_t, std::vector<commitment>>& commitments) = 0;
-        virtual void load_signing_commitments(const std::string& txid, std::map<uint64_t, std::vector<commitment>>& commitments) = 0;
-        virtual void delete_temporary_signing_data(const std::string& txid) = 0;
-    };
+        virtual ~signing_persistency() = default;
+        virtual void store_eddsa_signing_data(const std::string& txid, const std::shared_ptr<eddsa_signing_metadata>& data) = 0;
+        virtual std::shared_ptr<eddsa_signing_metadata> load_eddsa_signing_data(const std::string& txid) const = 0;
+        virtual void update_eddsa_signing_data(const std::string& txid, const std::shared_ptr<eddsa_signing_metadata>& data) = 0;
+        virtual void store_signing_commitments(const std::string& txid, const commitments_map& commitments) = 0;
+        virtual void load_signing_commitments(const std::string& txid, commitments_map& commitments) = 0;
+        virtual bool delete_eddsa_signing_data(const std::string& txid) = 0;
+};
 
-    eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& preprocessing_persistency);
+    eddsa_online_signing_service(platform_service& service, const cmp_key_persistency& key_persistency, signing_persistency& signing_persistency) : _service(service), _key_persistency(key_persistency), _signing_persistency(signing_persistency), _timing_map(service) {}
     void start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const std::set<uint64_t>& players_ids, std::vector<commitment>& commitments);
-    uint64_t store_commitments(const std::string& txid, const std::map<uint64_t, std::vector<commitment>>& commitments, uint32_t version, std::vector<elliptic_curve_point>& R);
+    uint64_t store_commitments(const std::string& txid, const commitments_map& commitments, uint32_t version, std::vector<elliptic_curve_point>& R);
     uint64_t broadcast_si(const std::string& txid, const std::map<uint64_t, std::vector<elliptic_curve_point>>& Rs, std::vector<elliptic_curve_scalar>& si);
     uint64_t get_eddsa_signature(const std::string& txid, const std::map<uint64_t, std::vector<elliptic_curve_scalar>>& s, std::vector<eddsa_signature>& sig);
 
-    void cancel_signing(const std::string& request_id);
+    void cancel_signing(const std::string& txid);
 
 private:
-    static std::vector<uint8_t> build_aad(const std::string& sid, uint64_t id, const commitments_sha256_t srid);
-    static elliptic_curve_scalar derivation_key_delta(const elliptic_curve256_algebra_ctx_t* algebra, const elliptic_curve256_point_t& public_key, const HDChaincode& chaincode, const std::vector<uint32_t>& path, uint8_t split_factor);
-
+    void calc_w(elliptic_curve_scalar& x, uint64_t my_id, const std::set<uint64_t>& ids);
     platform_service& _service;
     const cmp_key_persistency& _key_persistency;
     signing_persistency& _signing_persistency;

@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 
 #include "cosigner/cmp_setup_service.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
@@ -23,7 +24,7 @@ private:
     void store_key_metadata(const std::string& key_id, const fireblocks::common::cosigner::cmp_key_metadata& metadata, bool allow_override) override;
     void store_auxiliary_keys(const std::string& key_id, const fireblocks::common::cosigner::auxiliary_keys& aux) override;
     void store_keyid_tenant_id(const std::string& key_id, const std::string& tenant_id) override;
-    void store_setup_data(const std::string& key_id, const fireblocks::common::cosigner::setup_data& metadata) override;
+    void store_setup_data(const std::string& key_id, const fireblocks::common::cosigner::setup_data& metadata, bool override) override;
     void load_setup_data(const std::string& key_id, fireblocks::common::cosigner::setup_data& metadata) override;
     void store_setup_commitments(const std::string& key_id, const std::map<uint64_t, fireblocks::common::cosigner::commitment>& commitments) override;
     void load_setup_commitments(const std::string& key_id, std::map<uint64_t, fireblocks::common::cosigner::commitment>& commitments) override;
@@ -37,6 +38,7 @@ private:
         fireblocks::common::cosigner::auxiliary_keys aux_keys;
     };
 
+    mutable std::shared_mutex _mutex;
     std::map<std::string, key_info> _keys;
     std::map<std::string, fireblocks::common::cosigner::setup_data> _setup_data;
     std::map<std::string, std::map<uint64_t, fireblocks::common::cosigner::commitment>> _commitments;
@@ -71,5 +73,5 @@ inline std::string HexStr(const T& vch)
     return HexStr(vch.begin(), vch.end());
 }
 
-void create_secret(players_setup_info& players, cosigner_sign_algorithm type, const std::string& keyid, elliptic_curve256_point_t& pubkey);
-void add_user(players_setup_info& old_players, players_setup_info& new_players, cosigner_sign_algorithm type, const std::string& old_keyid, const std::string& new_keyid, const elliptic_curve256_point_t& pubkey);
+void create_secret(players_setup_info& players, cosigner_sign_algorithm type, const std::string& keyid, elliptic_curve256_point_t& pubkey, uint32_t version);
+void add_user(players_setup_info& old_players, players_setup_info& new_players, cosigner_sign_algorithm type, const std::string& old_keyid, const std::string& new_keyid, const elliptic_curve256_point_t& pubkey, uint32_t version);

@@ -66,7 +66,7 @@ TEST_CASE( "basic", "secret_sharing") {
         REQUIRE_FALSE(memcmp(secret, secret2, sizeof(secret) - 1) == 0);
     }
 
-    SECTION("more then needed") {
+    SECTION("more than needed") {
         const unsigned char secret[33] = "01234567890123456789012345678912";
         unsigned char secret2[33] = {0};
         verifiable_secret_sharing_t *shamir;
@@ -85,7 +85,7 @@ TEST_CASE( "basic", "secret_sharing") {
         printf("%s\n", secret2);
     }
 
-    SECTION("more then needed with invalid share") {
+    SECTION("more than needed with invalid share") {
         const unsigned char secret[33] = "01234567890123456789012345678912";
         unsigned char secret2[33] = {0};
         verifiable_secret_sharing_t *shamir;

@@ -31,10 +31,10 @@ typedef enum
 
 /* Creates commitment (SHA256) the data */
 COSIGNER_EXPORT commitments_status commitments_create_commitment_for_data(const uint8_t *data, uint32_t data_len, commitments_commitment_t *commitment);
-/* Verfies the data commitment (SHA256) */
+/* Verifies the data commitment (SHA256) */
 COSIGNER_EXPORT commitments_status commitments_verify_commitment(const uint8_t *data, uint32_t data_len, const commitments_commitment_t *commitment);
 
-/* Commitment context functions are usfull to create/verify commitment on scattered data */
+/* Commitment context functions are useful to create/verify commitment on scattered data */
 
 /* Creates commitment context */
 COSIGNER_EXPORT commitments_status commitments_ctx_commitment_new(commitments_ctx_t **ctx);
@@ -47,10 +47,10 @@ COSIGNER_EXPORT commitments_status commitments_ctx_commitment_final(commitments_
 COSIGNER_EXPORT commitments_status commitments_ctx_verify_new(commitments_ctx_t **ctx, const commitments_commitment_t *commitment);
 /* Updates commitment verification context with data */
 COSIGNER_EXPORT commitments_status commitments_ctx_verify_update(commitments_ctx_t *ctx, const void *data, uint32_t data_len);
-/* Verfies the commitment, and frees the commitment context */
+/* Verifies the commitment, and frees the commitment context */
 COSIGNER_EXPORT commitments_status commitments_ctx_verify_final(commitments_ctx_t *ctx);
 
-// frees the commitment context, usefull for breaking in the middle of commit/verify operation
+// frees the commitment context, useful for breaking in the middle of commit/verify operation
 COSIGNER_EXPORT void commitments_ctx_free(commitments_ctx_t *ctx);
 
 #ifdef __cplusplus

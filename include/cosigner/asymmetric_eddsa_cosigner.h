@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cosigner/platform_service.h"
 #include "cosigner_export.h"
 
 #include "crypto/ed25519_algebra/ed25519_algebra.h"
@@ -22,22 +23,18 @@ namespace cosigner
 {
 
 class cmp_key_persistency;
-class platform_service;
+class cosigner_verifier_chain;
+struct eddsa_signature_data;
+struct signing_data;
 
 static constexpr size_t SHA256_HASH_SIZE = 32;
 typedef std::array<uint8_t, SHA256_HASH_SIZE> eddsa_commitment;
 static_assert(sizeof(eddsa_commitment) == SHA256_HASH_SIZE);
 
-struct Rs_and_commitments
-{
-    std::vector<elliptic_curve_point> Rs;
-    eddsa_commitment R_commitment;
-};
-
 class COSIGNER_EXPORT asymmetric_eddsa_cosigner
 {
 public:
-    asymmetric_eddsa_cosigner(platform_service& cosigner_service, const cmp_key_persistency& key_persistency);
+    asymmetric_eddsa_cosigner(platform_service& service, const cmp_key_persistency& key_persistency);
     virtual ~asymmetric_eddsa_cosigner() {}
 
 protected:
@@ -49,7 +46,7 @@ protected:
 
     platform_service& _service;
     const cmp_key_persistency& _key_persistency;
-    static const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void (*)(elliptic_curve256_algebra_ctx_t*)> _ctx;
+    std::unique_ptr<elliptic_curve256_algebra_ctx_t, void (*)(elliptic_curve256_algebra_ctx_t*)> _ctx;
 };
 
 }

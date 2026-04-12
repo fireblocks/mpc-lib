@@ -16,15 +16,15 @@ struct damgard_fujisaki_public
 {
     uint32_t dimension; // number of secrets
     BIGNUM *n;          // public part of p * q
-    BIGNUM **s;         // for each secret labda holds it's public t^labda
+    BIGNUM **s;         // for each secret lambda holds its public t^lambda
     BIGNUM *t;          // single t used for all s
-    BN_MONT_CTX *mont;  // montegomery context used for calculations
+    BN_MONT_CTX *mont;  // montgomery context used for calculations
 };
 
 struct damgard_fujisaki_private 
 {
     struct damgard_fujisaki_public pub;
-    BIGNUM **lamda; // secrets, same count as pub->dimension
+    BIGNUM **lambda; // secrets, same count as pub->dimension
     BIGNUM *phi_n;  // (p-1) * (q-1)
     BIGNUM *p;
     BIGNUM *q;

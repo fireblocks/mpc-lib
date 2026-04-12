@@ -65,7 +65,7 @@ COSIGNER_EXPORT elliptic_curve_algebra_status ed25519_algebra_le_to_be(ed25519_s
 COSIGNER_EXPORT elliptic_curve_algebra_status ed25519_algebra_be_to_le(ed25519_le_scalar_t *res, const ed25519_scalar_t *n);
 /* Calculates H(RAM) the hash of R || public key || message and reduces the result to ed25519 field */
 COSIGNER_EXPORT elliptic_curve_algebra_status ed25519_calc_hram(const ed25519_algebra_ctx_t *ctx, ed25519_le_scalar_t *hram, const ed25519_point_t *R, const ed25519_point_t *public_key, const uint8_t *message, uint32_t message_size, uint8_t use_keccak);
-/* Signs the message using the private key directly (without diriving the private key from the private seed) */
+/* Signs the message using the private key directly (without deriving the private key from the private seed) */
 COSIGNER_EXPORT elliptic_curve_algebra_status ed25519_algebra_sign(const ed25519_algebra_ctx_t *ctx, const ed25519_scalar_t *private_key, const uint8_t *message, uint32_t message_size, uint8_t use_keccak, uint8_t signature[64]);
 /* Verifies the signature using the message and public_key key */
 COSIGNER_EXPORT int ed25519_verify(const ed25519_algebra_ctx_t *ctx, const uint8_t *message, size_t message_len, const uint8_t signature[64], const uint8_t public_key[32], uint8_t use_keccak);

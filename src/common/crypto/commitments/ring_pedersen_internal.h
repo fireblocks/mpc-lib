@@ -22,7 +22,7 @@ struct ring_pedersen_public
 struct ring_pedersen_private 
 {
     struct ring_pedersen_public pub;
-    BIGNUM *lamda;
+    BIGNUM *lambda;
     BIGNUM *phi_n;
 };
 ring_pedersen_status ring_pedersen_init_montgomery(struct ring_pedersen_public *pub, BN_CTX *ctx);

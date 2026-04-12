@@ -39,8 +39,8 @@ COSIGNER_EXPORT long paillier_verify_factorization_zkpok(const paillier_public_k
 COSIGNER_EXPORT long paillier_generate_coprime_zkp(const paillier_private_key_t *priv, const uint8_t *aad, uint32_t aad_len, uint8_t *y, uint32_t y_len, uint32_t *y_real_len);
 COSIGNER_EXPORT long paillier_verify_coprime_zkp(const paillier_public_key_t *pub, const uint8_t *aad, uint32_t aad_len, const uint8_t *y, uint32_t y_len);
 
-COSIGNER_EXPORT long paillier_generate_paillier_blum_zkp(const paillier_private_key_t *priv, const uint8_t *aad, uint32_t aad_len, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *proof_real_len);
-COSIGNER_EXPORT long paillier_verify_paillier_blum_zkp(const paillier_public_key_t *pub, const uint8_t *aad, uint32_t aad_len, const uint8_t *serialized_proof, uint32_t proof_len);
+COSIGNER_EXPORT long paillier_generate_paillier_blum_zkp(const paillier_private_key_t *priv, uint8_t compute_all_nth_roots, const uint8_t *aad, uint32_t aad_len, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *proof_real_len);
+COSIGNER_EXPORT long paillier_verify_paillier_blum_zkp(const paillier_public_key_t *pub, uint8_t use_all_nth_roots, const uint8_t *aad, uint32_t aad_len, const uint8_t *serialized_proof, uint32_t proof_len);
 
 COSIGNER_EXPORT long paillier_public_key_n(const paillier_public_key_t *pub, uint8_t *n, uint32_t n_len, uint32_t *n_real_len);
 COSIGNER_EXPORT uint32_t paillier_public_key_size(const paillier_public_key_t *pub);
@@ -49,7 +49,7 @@ COSIGNER_EXPORT paillier_public_key_t *paillier_public_key_deserialize(const uin
 COSIGNER_EXPORT void paillier_free_public_key(paillier_public_key_t *pub);
 
 COSIGNER_EXPORT long paillier_private_key_n(const paillier_private_key_t *priv, uint8_t *n, uint32_t n_len, uint32_t *n_real_len);
-COSIGNER_EXPORT const paillier_public_key_t* paillier_private_key_get_public(const paillier_private_key_t *priv); // the returned public pey must not be freed!
+COSIGNER_EXPORT const paillier_public_key_t* paillier_private_key_get_public(const paillier_private_key_t *priv); // the returned public key must not be freed!
 COSIGNER_EXPORT uint8_t *paillier_private_key_serialize(const paillier_private_key_t *priv, uint8_t *buffer, uint32_t buffer_len, uint32_t *real_buffer_len);
 COSIGNER_EXPORT paillier_private_key_t *paillier_private_key_deserialize(const uint8_t *buffer, uint32_t buffer_len);
 COSIGNER_EXPORT void paillier_free_private_key(paillier_private_key_t *priv);
@@ -61,17 +61,17 @@ COSIGNER_EXPORT long paillier_decrypt(const paillier_private_key_t *key, const u
 COSIGNER_EXPORT long paillier_decrypt_integer(const paillier_private_key_t *key, const uint8_t *ciphertext, uint32_t ciphertext_len, uint64_t *plaintext);
 
 // result = a + b
-COSIGNER_EXPORT long paillier_add(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, const uint8_t *b_ciphertext, uint32_t b_ciphertext_len, 
+COSIGNER_EXPORT long paillier_add(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, const uint8_t *b_ciphertext, uint32_t b_ciphertext_len,
     uint8_t *result, uint32_t result_len, uint32_t *result_real_len);
 COSIGNER_EXPORT long paillier_add_integer(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, uint64_t b, uint8_t *result, uint32_t result_len, uint32_t *result_real_len);
 
 // result = a - b
-COSIGNER_EXPORT long paillier_sub(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, const uint8_t *b_ciphertext, uint32_t b_ciphertext_len, 
+COSIGNER_EXPORT long paillier_sub(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, const uint8_t *b_ciphertext, uint32_t b_ciphertext_len,
     uint8_t *result, uint32_t result_len, uint32_t *result_real_len);
 COSIGNER_EXPORT long paillier_sub_integer(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, uint64_t b, uint8_t *result, uint32_t result_len, uint32_t *result_real_len);
 
 // result = a * b
-COSIGNER_EXPORT long paillier_mul(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, const uint8_t *b_plaintext, uint32_t b_plaintext_len, 
+COSIGNER_EXPORT long paillier_mul(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, const uint8_t *b_plaintext, uint32_t b_plaintext_len,
     uint8_t *result, uint32_t result_len, uint32_t *result_real_len);
 COSIGNER_EXPORT long paillier_mul_integer(const paillier_public_key_t *key, const uint8_t *a_ciphertext, uint32_t a_ciphertext_len, uint64_t b, uint8_t *result, uint32_t result_len, uint32_t *result_real_len);
 

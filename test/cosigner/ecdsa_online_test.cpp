@@ -5,6 +5,7 @@
 
 #include "cosigner/cmp_ecdsa_online_signing_service.h"
 #include "cosigner/cosigner_exception.h"
+#include "cosigner/bam_ecdsa_cosigner.h"
 #include "test_common.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve256_algebra.h"
 #include "crypto/GFp_curve_algebra/GFp_curve_algebra.h"
@@ -52,8 +53,8 @@ private:
     const std::string get_current_tenantid() const override {return TENANT_ID;}
     uint64_t get_id_from_keyid(const std::string& key_id) const override {return _id;}
     void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const override {assert(0);}
-    byte_vector_t encrypt_for_player(uint64_t id, const byte_vector_t& data) const override {assert(0);}
-    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {assert(0);}
+    byte_vector_t encrypt_for_player(const uint64_t id, const byte_vector_t& data, const std::optional<std::string>& verify_modulus = std::nullopt) const override {return data;}
+    byte_vector_t decrypt_message(const byte_vector_t& encrypted_data) const override {return encrypted_data;}
     bool backup_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key, const cmp_key_metadata& metadata, const auxiliary_keys& aux) override {return true;}
     void on_start_signing(const std::string& key_id, const std::string& txid, const signing_data& data, const std::string& metadata_json, const std::set<std::string>& players, const signing_type signature_type) override {}
     void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override
@@ -61,7 +62,22 @@ private:
         for (auto i = flags.begin(); i != flags.end(); ++i)
             *i = _positive_r ? POSITIVE_R : 0;
     }
+    virtual void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const override
+    {
+
+    }
+
+    virtual void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const override
+    {
+        if (metadata != "")
+        {
+            info[0].flags = POSITIVE_R;
+        }
+    }
     bool is_client_id(uint64_t player_id) const override {return false;}
+    void mark_key_setup_in_progress(const std::string& key_id) const override {}
+    void clear_key_setup_in_progress(const std::string& key_id) const override {}
+    void prepare_for_signing(const std::string& key_id, const std::string tx_id) override {}
 
     const uint64_t _id;
     const bool _positive_r;
@@ -118,8 +134,15 @@ struct siging_info
     cmp_ecdsa_online_signing_service signing_service;
 };
 
-static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type, const std::string& keyid, uint32_t count, const elliptic_curve256_point_t& pubkey, 
-    const byte_vector_t& chaincode, const std::vector<std::vector<uint32_t>>& paths, bool positive_r = false)
+static void ecdsa_sign(players_setup_info& players, 
+                       cosigner_sign_algorithm type, 
+                       const std::string& keyid, 
+                       uint32_t count, 
+                       const elliptic_curve256_point_t& pubkey, 
+                       const byte_vector_t& chaincode, 
+                       const std::vector<std::vector<uint32_t>>& paths, 
+                       bool positive_r,
+                       uint32_t version)
 {
     uuid_t uid;
     char txid[37] = {0};
@@ -163,10 +186,10 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
     for (auto i = services.begin(); i != services.end(); ++i)
     {
         auto& response = mta_responses[i->first];
-        REQUIRE_NOTHROW(i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, response));
+        REQUIRE_NOTHROW(i->second->signing_service.mta_response(txid, mta_requests, version, response));
 
         cmp_mta_responses repeat_response;
-        REQUIRE_THROWS_AS(i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, repeat_response), cosigner_exception);
+        REQUIRE_THROWS_AS(i->second->signing_service.mta_response(txid, mta_requests, version, repeat_response), cosigner_exception);
     }
     mta_requests.clear();
 
@@ -179,7 +202,7 @@ static void ecdsa_sign(players_setup_info& players, cosigner_sign_algorithm type
         REQUIRE_NOTHROW(i->second->signing_service.mta_verify(txid, mta_responses, delta));
 
         cmp_mta_responses repeat_response;
-        REQUIRE_THROWS_AS(i->second->signing_service.mta_response(txid, mta_requests, MPC_CMP_ONLINE_VERSION, repeat_response), cosigner_exception);
+        REQUIRE_THROWS_AS(i->second->signing_service.mta_response(txid, mta_requests, version, repeat_response), cosigner_exception);
 
         std::vector<cmp_mta_deltas> repeat_deltas;
         mta_responses = mta_responses_saved;
@@ -266,7 +289,7 @@ static void* sign_thread(void* arg)
     byte_vector_t chaincode(32, '\0');
     std::vector<uint32_t> path = {44, 0, 0, 0, 0};
 
-    ecdsa_sign(param->players, ECDSA_SECP256K1, param->keyid, 1, param->pubkey, chaincode, {path});
+    ecdsa_sign(param->players, ECDSA_SECP256K1, param->keyid, 1, param->pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     return NULL;
 }
 
@@ -286,12 +309,12 @@ TEST_CASE("cmp_ecdsa") {
             players.clear();
             players[1];
             players[2];
-            create_secret(players, ECDSA_SECP256K1, keyid, pubkey);
+            create_secret(players, ECDSA_SECP256K1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         }
 
         SECTION("sign") {
             auto before = Clock::now();
-            ecdsa_sign(players, ECDSA_SECP256K1, keyid, 1, pubkey, chaincode, {path});
+            ecdsa_sign(players, ECDSA_SECP256K1, keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
             auto after = Clock::now();
             std::cout << "ECDSA signing took: " << std::chrono::duration_cast<std::chrono::milliseconds>(after - before).count() << " ms" << std::endl;
         }
@@ -305,8 +328,8 @@ TEST_CASE("cmp_ecdsa") {
             new_players[11];
             new_players[12];
             new_players[13];
-            add_user(players, new_players, ECDSA_SECP256K1, keyid, new_keyid, pubkey);
-            ecdsa_sign(new_players, ECDSA_SECP256K1, new_keyid, 1, pubkey, chaincode, {path});
+            add_user(players, new_players, ECDSA_SECP256K1, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+            ecdsa_sign(new_players, ECDSA_SECP256K1, new_keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         }
 
         SECTION("sign multiple") {
@@ -319,7 +342,7 @@ TEST_CASE("cmp_ecdsa") {
                 derivation_paths.push_back(derivation_path);
                 ++derivation_path[2];
             }
-            ecdsa_sign(players, ECDSA_SECP256K1, keyid, COUNT, pubkey, chaincode, derivation_paths);
+            ecdsa_sign(players, ECDSA_SECP256K1, keyid, COUNT, pubkey, chaincode, derivation_paths, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         }
 
         SECTION("MT") {
@@ -341,7 +364,7 @@ TEST_CASE("cmp_ecdsa") {
         SECTION("sign positive R") {
             // run 4 times as R has 50% chance of being negative
             for (size_t i = 0; i < 8; ++i)
-                ecdsa_sign(players, ECDSA_SECP256K1, keyid, 1, pubkey, chaincode, {path}, true);;
+                ecdsa_sign(players, ECDSA_SECP256K1, keyid, 1, pubkey, chaincode, {path}, true, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         }
 
     }
@@ -355,8 +378,8 @@ TEST_CASE("cmp_ecdsa") {
         uuid_unparse(uid, keyid);
         players[1];
         players[2];
-        create_secret(players, ECDSA_SECP256R1, keyid, pubkey);
-        ecdsa_sign(players, ECDSA_SECP256R1, keyid, 1, pubkey, chaincode, {path});
+        create_secret(players, ECDSA_SECP256R1, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+        ecdsa_sign(players, ECDSA_SECP256R1, keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         char new_keyid[37] = {0};
         uuid_generate_random(uid);
         uuid_unparse(uid, new_keyid);
@@ -364,8 +387,8 @@ TEST_CASE("cmp_ecdsa") {
         new_players[11];
         new_players[12];
         new_players[13];
-        add_user(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey);
-        ecdsa_sign(new_players, ECDSA_SECP256R1, new_keyid, 1, pubkey, chaincode, {path});
+        add_user(players, new_players, ECDSA_SECP256R1, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+        ecdsa_sign(new_players, ECDSA_SECP256R1, new_keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 
     SECTION("stark") {  
@@ -377,8 +400,8 @@ TEST_CASE("cmp_ecdsa") {
         uuid_unparse(uid, keyid);
         players[1];
         players[2];
-        create_secret(players, ECDSA_STARK, keyid, pubkey);
-        ecdsa_sign(players, ECDSA_STARK, keyid, 1, pubkey, chaincode, {path});
+        create_secret(players, ECDSA_STARK, keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+        ecdsa_sign(players, ECDSA_STARK, keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
         char new_keyid[37] = {0};
         uuid_generate_random(uid);
         uuid_unparse(uid, new_keyid);
@@ -386,7 +409,7 @@ TEST_CASE("cmp_ecdsa") {
         new_players[11];
         new_players[12];
         new_players[13];
-        add_user(players, new_players, ECDSA_STARK, keyid, new_keyid, pubkey);
-        ecdsa_sign(new_players, ECDSA_STARK, new_keyid, 1, pubkey, chaincode, {path});
+        add_user(players, new_players, ECDSA_STARK, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+        ecdsa_sign(new_players, ECDSA_STARK, new_keyid, 1, pubkey, chaincode, {path}, false, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
     }
 }

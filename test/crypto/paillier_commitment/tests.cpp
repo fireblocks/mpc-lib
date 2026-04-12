@@ -367,17 +367,17 @@ TEST_CASE( "ZKP", "paillier_commitment")
         const uint8_t aad[] = "SOME AAD";
         
         uint32_t real_proof_len = 0;
-        auto res = paillier_commitment_damgard_fujisaki_parameters_zkp_generate(priv, aad,  sizeof(aad),  25, NULL,  0, &real_proof_len);
+        auto res = paillier_commitment_damgard_fujisaki_parameters_zkp_generate(priv, aad,  sizeof(aad),  NULL,  0, &real_proof_len);
         REQUIRE(ZKP_INSUFFICIENT_BUFFER == res);
 
         uint8_t* serialized_proof = (uint8_t*)malloc(real_proof_len);
 
         uint32_t actual_proff_len = 0;
-        res = paillier_commitment_damgard_fujisaki_parameters_zkp_generate(priv, aad,  sizeof(aad),  25, serialized_proof,  real_proof_len, &actual_proff_len);
+        res = paillier_commitment_damgard_fujisaki_parameters_zkp_generate(priv, aad,  sizeof(aad), serialized_proof,  real_proof_len, &actual_proff_len);
         REQUIRE(ZKP_SUCCESS == res);
         REQUIRE(actual_proff_len == real_proof_len);
 
-        res = paillier_commitment_damgard_fujisaki_parameters_zkp_verify(pub, aad,  sizeof(aad),  25, serialized_proof,  real_proof_len);
+        res = paillier_commitment_damgard_fujisaki_parameters_zkp_verify(pub, aad,  sizeof(aad),  serialized_proof,  real_proof_len);
         REQUIRE(ZKP_SUCCESS == res);
         free(serialized_proof);
     }

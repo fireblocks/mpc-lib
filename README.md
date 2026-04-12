@@ -32,6 +32,31 @@ To execute the test suite, run the command from the same build folder:
 make test
 ```
 
+### Benchmarks and Profiling
+
+Build the BAM signing benchmark by enabling the benchmark option during configuration:
+```sh
+cmake -S . -B build -DMPC_LIB_BUILD_BENCHMARKS=ON
+cmake --build build --target bam_sign_benchmark
+```
+
+Run the benchmark executable to measure `bam_key_sign` throughput (use `--benchmark_filter` to focus on a specific algorithm):
+```sh
+./build/benchmarks/bam_sign_benchmark --benchmark_filter=stark
+```
+
+To profile the benchmark and visualize the results:
+1. Record samples with Linux `perf` (install `hotspot` or another viewer once):
+   ```sh
+   perf record -F 999 -g ./build/benchmarks/bam_sign_benchmark --benchmark_filter=secp256k1_default
+   ```
+2. Open the generated `perf.data` in a graphical viewer, e.g.:
+   ```sh
+   hotspot perf.data        # Qt GUI with flame graphs
+   # or convert to Speedscope
+   perf script | speedscope
+   ```
+
 ## Usage
 
 A few examples for running a full signing process can be found in the [tests section](https://github.com/fireblocks/mpc-lib/tree/main/test/cosigner)

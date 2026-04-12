@@ -81,7 +81,7 @@ commitments_status pedersen_commitment_two_generators_create_commitment(elliptic
     }
         
     // trick to "transform" a variable-length scalar into the modular-reduced one.
-    // scanler will be (b + 0) in mod n which is b mod n
+    // scalar will be (b + 0) in mod n which is b mod n
     if (ctx->add_scalars(ctx, &scalar, b, b_len, &ZERO, 1) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS ||
         ctx->point_mul(ctx, &tmp, &base->h, &scalar) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
     {

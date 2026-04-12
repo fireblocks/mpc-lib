@@ -1,4 +1,4 @@
-#include "algebra_utils.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 #include <alloca.h> 
 #include <time.h>
 #include <openssl/bn.h>
@@ -102,7 +102,7 @@ elliptic_curve_algebra_status generate_tough_prime(BIGNUM* p, const uint32_t bit
     }
 
     // Limit factors number to prevent excessive memory allocation
-    if (bitsize > (256 - PRIME_GENERATION_POOL_INCREASE) * subprimes_bitsize)
+    if (bitsize >= (256 - PRIME_GENERATION_POOL_INCREASE) * subprimes_bitsize)
     {
         return ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER;
     }
@@ -205,7 +205,7 @@ elliptic_curve_algebra_status generate_tough_prime(BIGNUM* p, const uint32_t bit
 
             //NIST (FIPS 186-4) suggests 40 rounds for 3072-bit numbers, so 64 rounds is even stricter
             // probability of incorrect classification is 2^(-128) which is less than 10^(-39)
-            if (BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL)) 
+            if (BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1) 
             {
                 // Found a prime!
                 ret = ELLIPTIC_CURVE_ALGEBRA_SUCCESS;
@@ -250,7 +250,7 @@ elliptic_curve_algebra_status crt_recombine(BIGNUM* out, const BIGNUM* mod_p, co
     
     // the following validations added for sanity
     // the function will not return a meaningful result if violated
-    assert(is_coprime_fast(p, q, ctx));                             // Ensure that p and q are coprime (i.e., gcd(p, q) == 1)
+    assert(is_coprime_fast(p, q, ctx) == 1);                             // Ensure that p and q are coprime (i.e., gcd(p, q) == 1)
     assert(BN_mod_mul(out, q, q_inv_p, p, ctx) && BN_is_one(out));  // Verify q * q_inv_p ≡ 1 mod p (ensuring q_inv_p is a valid modular inverse)
     assert(BN_mul(out, p, q, ctx) && 0 == BN_cmp(out, pq));         // Verify p * q == pq (ensuring pq is the product of p and q)
     assert(BN_cmp(mod_p, p) < 0);                                   // Ensure mod_p is within the range [0, p) 
@@ -298,7 +298,7 @@ elliptic_curve_algebra_status crt_mod_exp(BIGNUM* out, const BIGNUM* base, const
         goto cleanup;
     }
 
-    assert(is_coprime_fast(p, q, ctx));
+    assert(is_coprime_fast(p, q, ctx) == 1);
     assert(BN_mod_mul(mod_q, q, q_inv_p, p, ctx) &&  BN_is_one(mod_q));
     assert(BN_mul(mod_p, p, q, ctx) && 0 == BN_cmp(mod_p, pq));
 
@@ -330,6 +330,12 @@ int is_coprime_fast(const BIGNUM *in_a, const BIGNUM *in_b, BN_CTX *ctx)
     int ret = -1;
 
     if (!in_a || !in_b || !ctx)
+    {
+        return -1;
+    }
+
+    // assume 0 is illegal
+    if (BN_is_zero(in_a) || BN_is_zero(in_b))
     {
         return -1;
     }

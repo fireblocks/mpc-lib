@@ -1,6 +1,10 @@
 set(COSIGNER_FILES
     blockchain/mpc/hd_derive.cpp
+    crypto/algebra_utils/algebra_utils.c
+    crypto/algebra_utils/status_convert.c
     crypto/commitments/commitments.c
+    crypto/commitments/damgard_fujisaki.c
+    crypto/commitments/pedersen.c
     crypto/commitments/ring_pedersen.c
     crypto/commitments/damgard_fujisaki.c
     crypto/commitments/pedersen.c
@@ -11,7 +15,9 @@ set(COSIGNER_FILES
     crypto/keccak1600/keccak1600.c
     crypto/paillier/paillier_zkp.c
     crypto/paillier/paillier.c
+    crypto/paillier_commitment/paillier_commitment.c
     crypto/shamir_secret_sharing/verifiable_secret_sharing.c
+    crypto/zero_knowledge_proof/damgard_fujisaki_zkp.c
     crypto/zero_knowledge_proof/diffie_hellman_log.c
     crypto/zero_knowledge_proof/range_proofs.c
     crypto/zero_knowledge_proof/schnorr.c
@@ -21,6 +27,11 @@ set(COSIGNER_FILES
     cosigner/asymmetric_eddsa_cosigner_client.cpp
     cosigner/asymmetric_eddsa_cosigner_server.cpp
     cosigner/asymmetric_eddsa_cosigner.cpp
+    cosigner/bam_well_formed_proof.cpp
+    cosigner/bam_ecdsa_cosigner_client.cpp
+    cosigner/bam_ecdsa_cosigner_server.cpp
+    cosigner/bam_ecdsa_cosigner.cpp
+    cosigner/bam_key_persistency_structures.cpp
     cosigner/cmp_ecdsa_offline_signing_service.cpp
     cosigner/cmp_ecdsa_online_signing_service.cpp
     cosigner/cmp_ecdsa_signing_service.cpp

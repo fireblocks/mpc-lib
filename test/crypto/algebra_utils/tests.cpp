@@ -1,4 +1,4 @@
-#include "../../../src/common/crypto/algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 #include "crypto/elliptic_curve_algebra/elliptic_curve_algebra_status.h"
 
 #include <string.h>
@@ -44,7 +44,7 @@ TEST_CASE("is_coprime_fast")
             REQUIRE(BN_gcd(tmp, q, p, ctx));
         } while(!BN_is_one(tmp));
 
-        REQUIRE(is_coprime_fast(p, q, ctx));
+        REQUIRE(is_coprime_fast(p, q, ctx) == 1);
     }
 
     SECTION("verify positive") 
@@ -55,7 +55,7 @@ TEST_CASE("is_coprime_fast")
 
         REQUIRE(BN_generate_prime_ex(p, 1024, 0, NULL, NULL, NULL));
         REQUIRE(BN_mul(q, p, val, ctx));
-        REQUIRE(!is_coprime_fast(p, q, ctx));
+        REQUIRE(is_coprime_fast(p, q, ctx) == 0);
     }
 
     BN_CTX_end(ctx);
@@ -82,7 +82,7 @@ TEST_CASE("tough_prime_generation")
         for (int i = 0; i < 5; ++ i)
         {
             REQUIRE(generate_tough_prime(p, 1024, 256, NULL, NULL, ctx) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL));
+            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1);
             REQUIRE(BN_mod_word(p, 4) == 3);
         }
     }
@@ -92,7 +92,7 @@ TEST_CASE("tough_prime_generation")
         for (int i = 0; i < 5; ++ i)
         {
             REQUIRE(generate_tough_prime(p, 1536, 256, NULL, NULL, ctx) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL));
+            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1);
             REQUIRE(BN_mod_word(p, 4) == 3);
         }
     }
@@ -102,7 +102,7 @@ TEST_CASE("tough_prime_generation")
         for (int i = 0; i < 5; ++ i)
         {
             REQUIRE(generate_tough_prime(p, 1024, 256, sixteen, seven, ctx) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL));
+            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1);
             REQUIRE(BN_mod_word(p, 16) == 7);
         }
     }
@@ -112,7 +112,7 @@ TEST_CASE("tough_prime_generation")
         for (int i = 0; i < 5; ++ i)
         {
             REQUIRE(generate_tough_prime(p, 1536, 256, sixteen, seven, ctx) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL));
+            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1);
             REQUIRE(BN_mod_word(p, 16) == 7);
         }
     }
@@ -123,7 +123,7 @@ TEST_CASE("tough_prime_generation")
         for (int i = 0; i < 5; ++ i)
         {
             REQUIRE(generate_tough_prime(p, 384, 192, sixteen, seven, ctx) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL));
+            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1);
             REQUIRE(BN_mod_word(p, 16) == 7);
         }
     }
@@ -134,7 +134,7 @@ TEST_CASE("tough_prime_generation")
         for (int i = 0; i < 5; ++ i)
         {
             REQUIRE(generate_tough_prime(p, 384, 192, NULL, NULL, ctx) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
-            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL));
+            REQUIRE(BN_is_prime_fasttest_ex(p, 64, ctx, 1, NULL) == 1);
             REQUIRE(BN_mod_word(p, 4) == 3);
         }
     }

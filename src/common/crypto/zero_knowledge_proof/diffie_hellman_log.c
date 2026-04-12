@@ -3,6 +3,7 @@
 #include "crypto/common/byteswap.h"
 #include <string.h>
 #include <openssl/sha.h>
+#include <openssl/bn.h>
 
 #define LOG_ZKP_SALT "diffie hellman discrete log zkp"
 
@@ -79,37 +80,43 @@ zero_knowledge_proof_status diffie_hellman_log_zkp_generate(const elliptic_curve
         return ZKP_INVALID_PARAMETER;
 
     if (algebra->rand(algebra, &d) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->rand(algebra, &y) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     
     if (algebra->generator_mul(algebra, &local_proof.D, &d) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->point_mul(algebra, &local_proof.Y, base_point, &y) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->mul_scalars(algebra, &tmp, *a, sizeof(elliptic_curve256_scalar_t), d, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->add_scalars(algebra, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), y, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->generator_mul(algebra, &local_proof.V, &tmp) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
 
     status = diffie_hellman_log_generate_e(algebra, aad, aad_len, base_point, public_data, &local_proof, &e);
     if (status != ZKP_SUCCESS)
-        return status;
+        goto cleanup;
 
     status = ZKP_UNKNOWN_ERROR;
     if (algebra->mul_scalars(algebra, &local_proof.z, e, sizeof(elliptic_curve256_scalar_t), *b, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->add_scalars(algebra, &local_proof.z, local_proof.z, sizeof(elliptic_curve256_scalar_t), d, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->mul_scalars(algebra, &local_proof.w, e, sizeof(elliptic_curve256_scalar_t), *secret, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     if (algebra->add_scalars(algebra, &local_proof.w, local_proof.w, sizeof(elliptic_curve256_scalar_t), y, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-        return status;
+        goto cleanup;
     
     memcpy(proof, &local_proof, sizeof(diffie_hellman_log_zkp_t));
-    return ZKP_SUCCESS;
+    status = ZKP_SUCCESS;
+
+cleanup:
+    OPENSSL_cleanse(d, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(y, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(tmp, sizeof(elliptic_curve256_scalar_t));
+    return status;
 }
 
 static inline zero_knowledge_proof_status from_elliptic_curve_status(elliptic_curve_algebra_status status)

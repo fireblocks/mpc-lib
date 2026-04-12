@@ -33,7 +33,7 @@ void cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing(cons
     
     if (metadata.players_info.size() != players_ids.size())
     {
-        LOG_ERROR("CMP protocol doesn't support threshold signatures, the key was created with %lu players and the signing reques is for %lu players", metadata.players_info.size(), players_ids.size());
+        LOG_ERROR("CMP protocol doesn't support threshold signatures, the key was created with %lu players and the signing request is for %lu players", metadata.players_info.size(), players_ids.size());
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
@@ -46,10 +46,17 @@ void cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing(cons
         }
     }
 
+    if (count > 0 && start_index > UINT32_MAX - count)
+    {
+        LOG_ERROR("start_index + count overflow: start_index=%" PRIu32 " count=%" PRIu32, start_index, count);
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
     _preprocessing_persistency.create_preprocessed_data(key_id, total_count);
 
     preprocessing_metadata processing_metadata = {key_id, metadata.algorithm, players_ids, start_index, count};
     memset(processing_metadata.ack, 0, sizeof(commitments_sha256_t));
+    processing_metadata.version = common::cosigner::MPC_PROTOCOL_VERSION;
     _preprocessing_persistency.store_preprocessing_metadata(request_id, processing_metadata);
 
     uint64_t my_id = _service.get_id_from_keyid(key_id);
@@ -67,7 +74,7 @@ void cmp_ecdsa_offline_signing_service::start_ecdsa_signature_preprocessing(cons
     }
 }
 
-uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::string& request_id, const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, cmp_mta_responses& response)
+uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::string& request_id, const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, uint32_t version, cmp_mta_responses& response)
 {
     LOG_INFO("Entering request id = %s", request_id.c_str());
     preprocessing_metadata metadata;
@@ -77,15 +84,25 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::stri
     if (requests.size() != metadata.players_ids.size())
     {
         LOG_ERROR("got %lu mta requests but the request is for %lu players", requests.size(), metadata.players_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     static const commitments_sha256_t ZERO = {0};
     if (memcmp(metadata.ack, ZERO, sizeof(commitments_sha256_t)) != 0)
     {
         LOG_ERROR("Can't change mta message ack");
-        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
+
+
+    if ((uint32_t)version > metadata.version)
+    {
+        LOG_FATAL("Min version %d is more than mpc version %d ", version, metadata.version);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    metadata.version = version;
+
     ack_mta_request(metadata.count, requests, metadata.players_ids, metadata.ack);
     memcpy(response.ack, metadata.ack, sizeof(commitments_sha256_t));
     _preprocessing_persistency.store_preprocessing_metadata(request_id, metadata, true);
@@ -108,11 +125,22 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::stri
             if (my_proof == req_it->second[i].mta_proofs.end())
             {
                 LOG_ERROR("Player %" PRIu64 " didn't send k rddh proof to me in block %lu", req_it->first, i);
-                throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+                throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
             }
             paillier_with_range_proof_t proof = {(uint8_t*)req_it->second[i].mta.message.data(), (uint32_t)req_it->second[i].mta.message.size(), (uint8_t*)my_proof->second.data(), (uint32_t)my_proof->second.size()};
-            auto status = range_proof_diffie_hellman_zkpok_verify(aux.ring_pedersen.get(), key_md.players_info.at(req_it->first).paillier.get(), algebra, aad.data(), aad.size(), 
-                &req_it->second[i].Z.data, &req_it->second[i].A.data, &req_it->second[i].B.data, &proof);
+            const uint8_t strict_ciphertext_length = (version >= fireblocks::common::cosigner::MPC_EXTENDED_MTA) ? 1 : 0;
+
+            auto status = range_proof_diffie_hellman_zkpok_verify(aux.ring_pedersen.get(), 
+                                                                  key_md.players_info.at(req_it->first).paillier.get(), 
+                                                                  algebra, 
+                                                                  aad.data(), 
+                                                                  aad.size(), 
+                                                                  &req_it->second[i].Z.data, 
+                                                                  &req_it->second[i].A.data, 
+                                                                  &req_it->second[i].B.data, 
+                                                                  &proof,
+                                                                  strict_ciphertext_length,
+                                                                  /*use_extended_seed=*/0);
             if (status != ZKP_SUCCESS)
             {
                 LOG_ERROR("Failed to verify k rddh proof from player %" PRIu64 " block %lu, error %d", req_it->first, i, status);
@@ -121,6 +149,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::stri
         }
     }
 
+    LOG_INFO("Calculating mta response");
     elliptic_curve_scalar key;
     cosigner_sign_algorithm algo;
     _key_persistency.load_key(metadata.key_id, algo, key.data);
@@ -130,12 +159,13 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_response(const std::stri
     {
         ecdsa_preprocessing_data data;
         _preprocessing_persistency.load_preprocessing_data(request_id, metadata.start_index + i, data);
-        cmp_mta_response resp = create_mta_response(data, algebra, my_id, aad, key_md, requests, i, key, aux);
+        cmp_mta_response resp = create_mta_response(data, algebra, my_id, aad, key_md, requests, i, key, aux, version);
         _preprocessing_persistency.store_preprocessing_data(request_id, metadata.start_index + i, data);
         response.response.push_back(std::move(resp));
     }
     return my_id;
 }
+
 
 uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string& request_id, const std::map<uint64_t, cmp_mta_responses>& mta_responses, std::vector<cmp_mta_deltas>& deltas)
 {
@@ -147,7 +177,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
     if (mta_responses.size() != metadata.players_ids.size())
     {
         LOG_ERROR("got %lu mta responses but the request is for %lu players", mta_responses.size(), metadata.players_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     uint64_t my_id = _service.get_id_from_keyid(metadata.key_id);
@@ -163,17 +193,17 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
         if (it == mta_responses.end())
         {
             LOG_ERROR("missing mta response from player %" PRIu64, *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (it->first != my_id && it->second.response.size() != metadata.count)
         {
             LOG_ERROR("got %lu mta responses from player %" PRIu64 ", but the request is for %" PRIu32 " presigning data", it->second.response.size(), *i, metadata.count);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (memcmp(it->second.ack, metadata.ack, sizeof(commitments_sha256_t)) != 0)
         {
             LOG_ERROR("got wrong ack from player %" PRIu64, *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
 
@@ -185,8 +215,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
             continue;
         const auto& other = key_md.players_info.at(it->first);
         auto aad = build_aad(uuid, it->first, key_md.seed);
-
-        verifiers[it->first] = mta::new_response_verifier(metadata.count, it->first, algebra, aad, aux.paillier, other.paillier, aux.ring_pedersen);
+        verifiers[it->first] = mta::new_response_verifier(metadata.version, metadata.count, it->first, algebra, aad, aux.paillier, other.paillier, aux.ring_pedersen, get_min_mta_batch_size_threshold());
     }
 
     auto aad = build_aad(uuid, my_id, key_md.seed);
@@ -194,7 +223,7 @@ uint64_t cmp_ecdsa_offline_signing_service::offline_mta_verify(const std::string
     {
         ecdsa_preprocessing_data data;
         _preprocessing_persistency.load_preprocessing_data(request_id, metadata.start_index + i, data);
-        cmp_mta_deltas delta = verify_block_and_get_delta(data, algebra, my_id, uuid, aad, key_md, mta_responses, i, aux, verifiers);
+        cmp_mta_deltas delta = verify_block_and_get_delta(data, algebra, my_id, uuid, aad, key_md, mta_responses, i, aux, metadata.version, verifiers);
         deltas.push_back(std::move(delta));
         _preprocessing_persistency.store_preprocessing_data(request_id, metadata.start_index + i, data);
     }
@@ -357,22 +386,22 @@ void cmp_ecdsa_offline_signing_service::ecdsa_sign(const std::string& key_id, co
         // the probability of not getting positive r after 255 attemps is 1/2^255
         if (!counter)
         {
-            LOG_ERROR("failed to found positive R, WTF???");
+            LOG_ERROR("failed to find positive R");
             throw cosigner_exception(cosigner_exception::INTERNAL_ERROR); 
         }
 
         LOG_INFO("calculating sig with R' = R * %u", counter);
 
-        // clac sig.s = k(m + r * delta) +r(k * x + Chi)
-        elliptic_curve256_scalar_t tmp;
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp, sig.r, sizeof(elliptic_curve256_scalar_t), delta.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), (const uint8_t*)data.blocks[i].data.data(), data.blocks[i].data.size()));
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &sig.s, tmp, sizeof(elliptic_curve256_scalar_t), preprocessed_data.k.data, sizeof(elliptic_curve256_scalar_t)));
+        // calc sig.s = k(m + r * delta) +r(k * x + Chi)
+        elliptic_curve_scalar tmp;
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp.data, sig.r, sizeof(elliptic_curve256_scalar_t), delta.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), (const uint8_t*)data.blocks[i].data.data(), data.blocks[i].data.size()));
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &sig.s, tmp.data, sizeof(elliptic_curve256_scalar_t), preprocessed_data.k.data, sizeof(elliptic_curve256_scalar_t)));
 
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp, preprocessed_data.k.data, sizeof(elliptic_curve256_scalar_t), key.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), preprocessed_data.chi.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), sig.r, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &sig.s, sig.s, sizeof(elliptic_curve256_scalar_t), tmp, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp.data, preprocessed_data.k.data, sizeof(elliptic_curve256_scalar_t), key.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), preprocessed_data.chi.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), sig.r, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &sig.s, sig.s, sizeof(elliptic_curve256_scalar_t), tmp.data, sizeof(elliptic_curve256_scalar_t)));
         if (protocol_version >= MPC_RAND_R_VERSION)
             throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &sig.s, sig.s, sizeof(elliptic_curve256_scalar_t), hram_invers, sizeof(elliptic_curve256_scalar_t)));
         

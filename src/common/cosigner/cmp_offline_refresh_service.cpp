@@ -166,36 +166,36 @@ void cmp_offline_refresh_service::refresh_key(const std::string& key_id, const s
     LOG_INFO("Refreshing presigning data for key %s", key_id.c_str());
     _refresh_key_persistency.transform_preprocessed_data_and_store_temporary(key_id, request_id, [algebra, &private_key, &new_private_key, &mine_prfs_k, &mine_prfs_chi, &other_prfs_k, &other_prfs_chi] (uint64_t index, cmp_signature_preprocessed_data& data)
     {
-        elliptic_curve256_scalar_t k;
-        memcpy(k, data.k.data, sizeof(elliptic_curve256_scalar_t));
-        elliptic_curve256_scalar_t chi;
-        memcpy(chi, data.chi.data, sizeof(elliptic_curve256_scalar_t));
+        elliptic_curve_scalar k;
+        memcpy(k.data, data.k.data, sizeof(elliptic_curve256_scalar_t));
+        elliptic_curve_scalar chi;
+        memcpy(chi.data, data.chi.data, sizeof(elliptic_curve256_scalar_t));
         commitments_sha256_t val;
 
         for (auto i = 0ul; i != mine_prfs_k.size(); ++i)
         {
             other_prfs_k[i].run(index, val);
-            throw_cosigner_exception(algebra->add_scalars(algebra, &k, k, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
+            throw_cosigner_exception(algebra->add_scalars(algebra, &k.data, k.data, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
             mine_prfs_k[i].run(index, val);
-            throw_cosigner_exception(algebra->sub_scalars(algebra, &k, k, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
+            throw_cosigner_exception(algebra->sub_scalars(algebra, &k.data, k.data, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
         }
 
-        elliptic_curve256_scalar_t tmp;
-        throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp, data.k.data, sizeof(elliptic_curve256_scalar_t), reinterpret_cast<const uint8_t*>(private_key.data), sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(algebra->add_scalars(algebra, &chi, chi, sizeof(elliptic_curve256_scalar_t), tmp, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp, k, sizeof(elliptic_curve256_scalar_t), new_private_key.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(algebra->sub_scalars(algebra, &chi, chi, sizeof(elliptic_curve256_scalar_t), tmp, sizeof(elliptic_curve256_scalar_t)));
+        elliptic_curve_scalar tmp;
+        throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp.data, data.k.data, sizeof(elliptic_curve256_scalar_t), reinterpret_cast<const uint8_t*>(private_key.data), sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(algebra->add_scalars(algebra, &chi.data, chi.data, sizeof(elliptic_curve256_scalar_t), tmp.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(algebra->mul_scalars(algebra, &tmp.data, k.data, sizeof(elliptic_curve256_scalar_t), new_private_key.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(algebra->sub_scalars(algebra, &chi.data, chi.data, sizeof(elliptic_curve256_scalar_t), tmp.data, sizeof(elliptic_curve256_scalar_t)));
 
         for (auto i = 0ul; i != mine_prfs_chi.size(); ++i)
         {
             other_prfs_chi[i].run(index, val);
-            throw_cosigner_exception(algebra->add_scalars(algebra, &chi, chi, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
+            throw_cosigner_exception(algebra->add_scalars(algebra, &chi.data, chi.data, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
             mine_prfs_chi[i].run(index, val);
-            throw_cosigner_exception(algebra->sub_scalars(algebra, &chi, chi, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
+            throw_cosigner_exception(algebra->sub_scalars(algebra, &chi.data, chi.data, sizeof(elliptic_curve256_scalar_t), val, sizeof(commitments_sha256_t)));
         }
 
-        memcpy(data.chi.data, chi, sizeof(elliptic_curve256_scalar_t));
-        memcpy(data.k.data, k, sizeof(elliptic_curve256_scalar_t));
+        memcpy(data.chi.data, chi.data, sizeof(elliptic_curve256_scalar_t));
+        memcpy(data.k.data, k.data, sizeof(elliptic_curve256_scalar_t));
     });
     _refresh_key_persistency.delete_refresh_key_seeds(request_id);
 

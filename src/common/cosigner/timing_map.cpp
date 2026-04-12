@@ -16,7 +16,7 @@ void TimingMap::insert(const std::string& key)
 {
     std::unique_lock<std::mutex> guard(_lock);
 #ifdef DEBUG
-    // Unit tests may call some phase handlers more then once to test replays
+    // Unit tests may call some phase handlers more than once to test replays
     if (_data.find(key) == _data.end())
 #endif
     _data[key] = _time_service.now_msec();

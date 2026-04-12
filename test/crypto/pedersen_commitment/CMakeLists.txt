@@ -1,5 +1,6 @@
 add_executable(pedersen_commitment_test
     tests.cpp
+    ${PROJECT_SOURCE_DIR}/src/common/crypto/commitments/ring_pedersen.c
 )
 
 target_compile_options(pedersen_commitment_test PRIVATE -Wall -Wextra)

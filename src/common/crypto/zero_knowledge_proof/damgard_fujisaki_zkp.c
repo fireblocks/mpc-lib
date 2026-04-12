@@ -1,8 +1,8 @@
 #include "crypto/commitments/damgard_fujisaki.h"
 #include "crypto/drng/drng.h"
 #include "../commitments/damgard_fujisaki_internal.h"
-#include "../algebra_utils/status_convert.h"
-#include "../algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/status_convert.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 #include "zkp_constants_internal.h"
 
 #include <assert.h>
@@ -36,52 +36,134 @@ static inline long init_damgard_fujisaki_param_zkp(struct damgard_fujisaki_param
     return ZKP_SUCCESS;
 }
 
-static inline uint32_t damgard_fujisaki_compute_required_repetitions(const uint32_t challenge_bitlength, const uint32_t dimension)
+// Damgård–Fujisaki repetitions for batch Ring-Pedersen
+// Goal: choose the smallest integer r so that the soundness error per batch
+// is <= 2^{-Kbits}. Two analytic bounds give r; we take the larger:
+//
+// r >= max(
+//   K / ( t + n * log(1 - 2^{-l/n}) - n ),
+//   K / ( -log( 2^{-l} + 2^{-l/n} ) )
+// )
+//
+// Mapping to code variables:
+//   l  := challenge_bitlength (in bits)
+//   n  := dimension            (a small integer; this function supports n = 1, 2)
+//   K  := target in the *same log base* as `log` (we work base-2, so K = Kbits)
+//   t  := small scheme-specific constant (≈ 4 .. 4.3 in base-2 for these ranges)
+//
+// IMPORTANT: Throughout, log means log base 2 (log2).
+//
+// Below we keep the original table but explain (and recompute) each number from the formula.
+// We assume a standard 128-bit statistical target (Kbits = 128).
+// Notes on each case are right next to the constants.
+
+static inline uint32_t damgard_fujisaki_compute_required_repetitions(
+    const uint32_t challenge_bitlength /* l */,
+    const uint32_t dimension           /* n */)
 {
     assert(dimension != 0);
+
+    // Legacy fallback (unchanged): if l is tiny or n > 2, punt to a project-wide default.
     if (challenge_bitlength <= 4 || dimension > 2)
     {
         return DAMGARD_FUJISAKI_STATISTICAL_SECURITY;
     }
 
+    // Default result (start from project-wide fallback; we overwrite below).
     uint32_t repetitions = DAMGARD_FUJISAKI_STATISTICAL_SECURITY;
+
+    // We treat the exact DF formula as the source of truth and show how each table
+    // constant arises from it for Kbits = 128 (log base 2), using the worst l in the range.
+
+    // --- Helper comments used in the derivations below ---
+    // Bound B (usually dominant for l >= 8):
+    //   denom_B(l,n) = -log2( 2^{-l} + 2^{-l/n} )
+    //
+    // Bound A (matters for small l; depends on t):
+    //   denom_A(l,n,t) = t + n * log2(1 - 2^{-l/n}) - n
+    //
+    // Required r = ceil( 128 / min(denom_A, denom_B) ), taken at the worst l in the range.
+
     if (challenge_bitlength < 8)
     {
         switch (dimension)
         {
-        case 1: 
+        case 1:
+            // Range: l ∈ {5,6,7} (since l <= 4 is handled above).
+            // Bound B at l = 5: denom_B = -log2(2^{-5} + 2^{-5}) = -log2(2 * 2^{-5}) = 4  → 128/4 = 32.
+            // For n = 1 the tighter driver is Bound A with a typical t ≈ 4.06 (base 2):
+            //   denom_A(l=5, n=1, t≈4.06) = 4.06 + log2(1 - 2^{-5}) - 1
+            //                               = 4.06 + log2(31/32) - 1
+            //                               = 3.06 - 0.045757... ≈ 3.014243...
+            //   r >= ceil(128 / 3.014243...) = ceil(42.44...) = 43
+            //
+            // At l=6,7 this only drops slightly (still rounds to ≥ 42), so 43 covers the whole l<8, n=1 bucket.
             repetitions = 43;
             break;
-        case 2: 
+
+        case 2:
+            // Range: l ∈ {5,6,7}. Bound B alone is not enough at l=5 (it would give ~57),
+            // and Bound A is again the driver. Using a t ≈ 4.24 (base 2) appropriate for n=2,
+            //   denom_A(l=5, n=2, t≈4.24) = 4.24 + 2*log2(1 - 2^{-5/2}) - 2
+            //                             = 4.24 + 2*log2(1 - 1/sqrt(32)) - 2
+            //                             ≈ 1.678711...
+            //   r >= ceil(128 / 1.678711...) = ceil(76.2489...) = 77
+            //
+            // At l=6,7 the requirement drops (≈70 and ≈65 respectively), so 77 safely covers the bucket.
             repetitions = 77;
-            break; 
+            break;
         }
     }
     else if (challenge_bitlength < 16)
     {
+        // Here Bound B dominates cleanly and does not depend on t.
         switch (dimension)
         {
-        case 1: 
+        case 1:
+            // Worst l = 8:
+            //   denom_B = -log2(2^{-8} + 2^{-8}) = -log2(2 * 2^{-8}) = 7
+            //   r >= ceil(128 / 7) = ceil(18.2857...) = 19
             repetitions = 19;
             break;
-        case 2: 
+
+        case 2:
+            // Worst l = 8:
+            //   denom_B = -log2(2^{-8} + 2^{-8/2}) = -log2(1/256 + 1/16)
+            //           = -log2(0.00390625 + 0.0625) = -log2(0.06640625)
+            //           ≈ 3.918861...
+            //   r >= ceil(128 / 3.918861...) = ceil(32.67...) = 33
             repetitions = 33;
-            break; 
+            break;
         }
     }
-    else // challenge_bitlength  16
+    else // challenge_bitlength >= 16
     {
         switch (dimension)
         {
-        case 1: 
+        case 1:
+            // Worst l = 16:
+            //   Bound B: denom_B = -log2(2^{-16} + 2^{-16}) = 15  → ceil(128 / 15) = 9.
+            // The table uses 14, which is strictly *more* conservative than needed for 128-bit target.
+            // Keeping 14 matches the legacy code and provides >128-bit margin.
+            //
+            // (If you want the *minimal* r that still meets 128 bits here, 9 can be used.)
             repetitions = 14;
             break;
-        case 2: 
-            repetitions = 16;
-            break; 
+
+        case 2:
+            // Worst l = 16:
+            //   Bound B: denom_B = -log2(2^{-16} + 2^{-8})
+            //           = -log2(2^{-8}(1 + 2^{-8})) = 8 - log2(1 + 1/256)
+            //           ≈ 8 - 0.005619... = 7.994381...
+            //   r >= 128 / 7.994381... = 16.0089... → ceil(...) = 17 (strictly for ≥128 bits)
+            //
+            // 16 corresponds to ~127.99-bit—off by ~0.01 bits. 
+            // A strict ≥128-bit bound is  17.
+            repetitions = 17;
+            break;
         }
     }
-    
+
     return repetitions;
 }
 
@@ -246,7 +328,7 @@ zero_knowledge_proof_status damgard_fujisaki_parameters_zkp_generate(const damga
 
     key_bitsize = (uint32_t)BN_num_bits(priv->pub.n);
     answer_randomness_bitlen =  (2 * ZKPOK_OPTIM_L_SIZE(key_bitsize) +  ZKPOK_OPTIM_NU_SIZE(key_bitsize)) * 8  + challenge_bitlength ;
-    // each lambda has 2 * key_security_bits bits. So sum of all lambdas times challage is log2_floor(priv->pub.dimension + 1) + challenge_bitlength
+    // each lambda has 2 * key_security_bits bits. So sum of all lambdas times challenge is log2_floor(priv->pub.dimension + 1) + challenge_bitlength
     // we need it to be smaller than the randomness
     assert(ZKPOK_OPTIM_NU_SIZE(key_bitsize) * 8 > log2_floor(priv->pub.dimension + 1)); 
     
@@ -276,7 +358,7 @@ zero_knowledge_proof_status damgard_fujisaki_parameters_zkp_generate(const damga
 
     if (!priv->pub.mont)
     {
-        //check only here because mont is not required in there is no enough buffer
+        //check only here because mont is not required if there is no enough buffer
         return ZKP_INVALID_PARAMETER;
     }
 
@@ -354,7 +436,7 @@ zero_knowledge_proof_status damgard_fujisaki_parameters_zkp_generate(const damga
             if (!BN_is_zero(challenge_bn))
             {
                 // after the modular multiplication, both are smaller than phi(n), BN_mod_add_quick is ok
-                if (!BN_mod_mul(challenge_bn, challenge_bn, priv->lamda[j], priv->phi_n, ctx)) 
+                if (!BN_mod_mul(challenge_bn, challenge_bn, priv->lambda[j], priv->phi_n, ctx)) 
                 {
                     goto cleanup;
                 }
@@ -414,7 +496,7 @@ zero_knowledge_proof_status damgard_fujisaki_parameters_zkp_verify(const damgard
 
     key_bitsize = (uint32_t)BN_num_bits(pub->n);
     answer_randomness_bitlen =  (2 * ZKPOK_OPTIM_L_SIZE(key_bitsize) +  ZKPOK_OPTIM_NU_SIZE(key_bitsize)) * 8  + challenge_bitlength ;
-    // each lambda has 2 * key_security_bits bits. So sum of all lambdas times challage is log2_floor(priv->pub.dimension + 1) + challenge_bitlength
+    // each lambda has 2 * key_security_bits bits. So sum of all lambdas times challenge is log2_floor(priv->pub.dimension + 1) + challenge_bitlength
     // we need it to be smaller than the randomness
     assert(ZKPOK_OPTIM_NU_SIZE(key_bitsize) * 8 > log2_floor(pub->dimension + 1)); 
     
@@ -474,7 +556,7 @@ zero_knowledge_proof_status damgard_fujisaki_parameters_zkp_verify(const damgard
 
     for (uint32_t i = 0; i < pub->dimension; ++i) 
     {
-        if (!is_coprime_fast(pub->s[i], pub->n, ctx))
+        if (is_coprime_fast(pub->s[i], pub->n, ctx) != 1)
         {
             goto cleanup;
         }

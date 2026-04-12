@@ -1,8 +1,8 @@
 #include "crypto/zero_knowledge_proof/range_proofs.h"
 #include "crypto/paillier_commitment/paillier_commitment.h"
 #include "crypto/drng/drng.h"
-#include "../algebra_utils/algebra_utils.h"
-#include "../algebra_utils/status_convert.h"
+#include "crypto/algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/status_convert.h"
 #include "../paillier/paillier_internal.h"
 #include "../paillier_commitment/paillier_commitment_internal.h"
 #include "../commitments/ring_pedersen_internal.h"
@@ -25,6 +25,9 @@
 
 #define PAILLER_LARGE_FACTORS_QUADRATIC_ZKP_SEED "Range Proof Pailler Quadratic for G and H"
 
+
+#define MAX_D_SIZE (4096)
+
 typedef struct
 {
     BIGNUM *S;
@@ -38,7 +41,7 @@ typedef struct
 
 typedef struct
 {
-  range_proof_exponent_zkpok_t base; // diffie_hellman is extansion to the exponent zkpok where rddh.Z<->log.Y
+  range_proof_exponent_zkpok_t base; // diffie_hellman is extension to the exponent zkpok where rddh.Z<->log.Y
   elliptic_curve256_scalar_t w;
   elliptic_curve256_point_t Y;
 } range_proof_diffie_hellman_zkpok_t;
@@ -58,7 +61,7 @@ typedef struct
     BIGNUM *v;
 } range_proof_paillier_large_factors_zkp_t;
 
-typedef struct 
+typedef struct
 {
     BIGNUM* d;
     BIGNUM* d_minus_1_over_2;
@@ -67,7 +70,7 @@ typedef struct
     BN_MONT_CTX *d_mont; // to accelerate further exponentiations mod d
 } paillier_large_factors_quadratic_setup_t;
 
-typedef struct 
+typedef struct
 {
     paillier_large_factors_quadratic_setup_t setup;
     BIGNUM *A;
@@ -91,16 +94,24 @@ static zero_knowledge_proof_status init_exponent_zkpok(range_proof_exponent_zkpo
     zkpok->z1 = BN_CTX_get(ctx);
     zkpok->z2 = BN_CTX_get(ctx);
     zkpok->z3 = BN_CTX_get(ctx);
-    
+
     if (zkpok->S && zkpok->D && zkpok->T && zkpok->z1 && zkpok->z2 && zkpok->z3)
     {
         return ZKP_SUCCESS;
     }
-        
+
     return ZKP_OUT_OF_MEMORY;
 }
 
-static inline int genarate_zkpok_seed_internal(const range_proof_exponent_zkpok_t *proof, const BIGNUM *ciphertext, const elliptic_curve256_point_t *X, const uint8_t *aad, uint32_t aad_len, SHA256_CTX *ctx)
+static inline int genarate_zkpok_seed_internal(const uint32_t paillier_n_size,
+                                               const uint32_t ring_pedersen_n_size,
+                                               const range_proof_exponent_zkpok_t *proof, 
+                                               const BIGNUM *ciphertext, 
+                                               const elliptic_curve256_point_t *X, 
+                                               const uint8_t *aad, 
+                                               const uint32_t aad_len, 
+                                               const uint8_t use_extended_seed,
+                                               SHA256_CTX *ctx)
 {
     uint8_t *n = NULL;
     uint32_t max_size;
@@ -110,50 +121,111 @@ static inline int genarate_zkpok_seed_internal(const range_proof_exponent_zkpok_
     {
         SHA256_Update(ctx, aad, aad_len);
     }
-    max_size = MAX(BN_num_bytes(proof->D), BN_num_bytes(proof->S)); // we assume that the paillier n is larger then ring pedersen n
-    max_size = MAX(max_size, (uint32_t)BN_num_bytes(ciphertext));
+
+    assert( (uint32_t)BN_num_bytes(proof->D) <= 2 * paillier_n_size );
+    assert( (uint32_t)BN_num_bytes(proof->S) <= ring_pedersen_n_size );
+    assert( (uint32_t)BN_num_bytes(ciphertext) <= 2 * paillier_n_size );
+    assert( (uint32_t)BN_num_bytes(proof->T) <= ring_pedersen_n_size );
+    
+
+    if (use_extended_seed)
+    {
+        max_size = MAX(ring_pedersen_n_size, 2U * paillier_n_size);
+    }
+    else
+    {
+        max_size = MAX((uint32_t)BN_num_bytes(proof->D), (uint32_t)BN_num_bytes(proof->S)); // we assume that the paillier n is larger then ring pedersen n
+        max_size = MAX(max_size, (uint32_t)BN_num_bytes(ciphertext));
+        max_size = MAX(max_size, (uint32_t)BN_num_bytes(proof->T));
+    }    
     n = (uint8_t*)malloc(max_size);
+    
     if (!n)
     {
         return 0;
     }
-        
-    BN_bn2bin(ciphertext, n);
-    SHA256_Update(ctx, n, BN_num_bytes(ciphertext));
+
+    if (use_extended_seed)
+    {
+        if (BN_bn2binpad(ciphertext, n, 2U * paillier_n_size) != (int)(2U * paillier_n_size))
+        {
+            goto cleanup;
+        }
+        SHA256_Update(ctx, n, 2U * paillier_n_size);
+    }
+    else
+    {
+        BN_bn2bin(ciphertext, n);
+        SHA256_Update(ctx, n, (size_t)BN_num_bytes(ciphertext));
+    }
+    
+    
     SHA256_Update(ctx, *X, sizeof(elliptic_curve256_point_t));
 
-    BN_bn2bin(proof->S, n);
-    SHA256_Update(ctx, n, BN_num_bytes(proof->S));
-    BN_bn2bin(proof->D, n);
-    SHA256_Update(ctx, n, BN_num_bytes(proof->D));
-    SHA256_Update(ctx, proof->Y, sizeof(elliptic_curve256_point_t));
-    if ((uint32_t)BN_num_bytes(proof->T) > max_size) // should never happen
+    if (use_extended_seed)
     {
-        //reallocate memory so n should not be freed
-        uint8_t *tmp = realloc(n, BN_num_bytes(proof->T)); 
-        if (!tmp)
+
+        if (BN_bn2binpad(proof->S, n, ring_pedersen_n_size) != (int)ring_pedersen_n_size)
         {
-            free(n);
-            return 0;
+            goto cleanup;
         }
-        n = tmp;
+        SHA256_Update(ctx, n, ring_pedersen_n_size);
+        if (BN_bn2binpad(proof->D, n, 2U * paillier_n_size) != (int)(2U * paillier_n_size))
+        {
+            goto cleanup;
+        }
+        SHA256_Update(ctx, n, 2U * paillier_n_size);
     }
-    BN_bn2bin(proof->T, n);
-    SHA256_Update(ctx, n, BN_num_bytes(proof->T));
+    else
+    {
+        BN_bn2bin(proof->S, n);
+        SHA256_Update(ctx, n, BN_num_bytes(proof->S));
+        BN_bn2bin(proof->D, n);
+        SHA256_Update(ctx, n, BN_num_bytes(proof->D));
+
+    }
+
+    SHA256_Update(ctx, proof->Y, sizeof(elliptic_curve256_point_t));
+
+    if (use_extended_seed)
+    {
+        if (BN_bn2binpad(proof->T, n, ring_pedersen_n_size) != (int)ring_pedersen_n_size)
+        {
+            goto cleanup;
+        }
+        SHA256_Update(ctx, n, ring_pedersen_n_size);
+    }
+    else
+    {
+        BN_bn2bin(proof->T, n);
+        SHA256_Update(ctx, n, BN_num_bytes(proof->T));
+    }
     free(n);
     return 1;
+
+cleanup:
+    free(n);
+    return 0;
 }
 
-static inline int genarate_exponent_zkpok_seed(const range_proof_exponent_zkpok_t *proof, const BIGNUM *ciphertext, const elliptic_curve256_point_t *X, const uint8_t *aad, uint32_t aad_len, uint8_t *seed)
+static inline int genarate_exponent_zkpok_seed(const uint32_t paillier_n_size,
+                                               const uint32_t ring_pedersen_n_size, 
+                                               const range_proof_exponent_zkpok_t *proof, 
+                                               const BIGNUM *ciphertext, 
+                                               const elliptic_curve256_point_t *X, 
+                                               const uint8_t *aad, 
+                                               uint32_t aad_len, 
+                                               const uint8_t use_extended_seed,
+                                               uint8_t *seed)
 {
     SHA256_CTX ctx;
-    
+
     SHA256_Init(&ctx);
-    if (!genarate_zkpok_seed_internal(proof, ciphertext, X, aad, aad_len, &ctx))
+    if (!genarate_zkpok_seed_internal(paillier_n_size, ring_pedersen_n_size, proof, ciphertext, X, aad, aad_len, use_extended_seed, &ctx))
     {
         return 0;
     }
-        
+
     SHA256_Final(seed, &ctx);
     return 1;
 }
@@ -163,7 +235,7 @@ static inline uint32_t exponent_zkpok_serialized_size_internal(const BIGNUM *ped
     const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(pedersen_n);
     const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
 
-    return 
+    return
         sizeof(uint32_t) + // sizeof(ring_pedersen->n)
         sizeof(uint32_t) + // sizeof(paillier->n)
         ring_pedersen_n_size + // sizeof(S)
@@ -181,13 +253,13 @@ static inline uint32_t exponent_zkpok_serialized_size(const ring_pedersen_public
     return exponent_zkpok_serialized_size_internal(pub->n, paillier->n);
 }
 
-static uint8_t* serialize_exponent_zkpok(const range_proof_exponent_zkpok_t* proof, 
-                                         const BIGNUM* ring_pedersen_n, 
-                                         const BIGNUM* paillier_n, 
+static uint8_t* serialize_exponent_zkpok(const range_proof_exponent_zkpok_t* proof,
+                                         const BIGNUM* ring_pedersen_n,
+                                         const BIGNUM* paillier_n,
                                          uint8_t* serialized_proof)
 {
-    const uint32_t ring_pedersen_n_size = BN_num_bytes(ring_pedersen_n);
-    const uint32_t paillier_n_size = BN_num_bytes(paillier_n);
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen_n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
     uint8_t *ptr = serialized_proof;
 
     *(uint32_t*)ptr = ring_pedersen_n_size;
@@ -196,37 +268,55 @@ static uint8_t* serialize_exponent_zkpok(const range_proof_exponent_zkpok_t* pro
     *(uint32_t*)ptr = paillier_n_size;
     ptr += sizeof(uint32_t);
 
-    BN_bn2binpad(proof->S, ptr, ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->S, ptr, ring_pedersen_n_size) <= 0)
+    {
+        return NULL;
+    }
     ptr += ring_pedersen_n_size;
 
-    BN_bn2binpad(proof->D, ptr, paillier_n_size * 2);
+    if (BN_bn2binpad(proof->D, ptr, paillier_n_size * 2) <= 0)
+    {
+        return NULL;
+    }
     ptr += paillier_n_size * 2;
 
     memcpy(ptr, proof->Y, sizeof(elliptic_curve256_point_t));
     ptr += sizeof(elliptic_curve256_point_t);
 
-    BN_bn2binpad(proof->T, ptr, ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->T, ptr, ring_pedersen_n_size) <= 0)
+    {
+        return NULL;
+    }
     ptr += ring_pedersen_n_size;
 
-    BN_bn2binpad(proof->z1, ptr, ZKPOK_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + 1);
+    if (BN_bn2binpad(proof->z1, ptr, ZKPOK_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + 1) <= 0)
+    {
+        return NULL;
+    }
     ptr += ZKPOK_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + 1;
 
-    BN_bn2binpad(proof->z2, ptr, paillier_n_size);
+    if (BN_bn2binpad(proof->z2, ptr, paillier_n_size) <= 0)
+    {
+        return NULL;
+    }
     ptr += paillier_n_size;
 
-    BN_bn2binpad(proof->z3, ptr, ZKPOK_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + ring_pedersen_n_size + 1);
+    if (BN_bn2binpad(proof->z3, ptr, ZKPOK_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + ring_pedersen_n_size + 1) <= 0)
+    {
+        return NULL;
+    }
     ptr += ZKPOK_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + ring_pedersen_n_size + 1;
 
     return ptr;
 }
 
-static const uint8_t* deserialize_exponent_zkpok(range_proof_exponent_zkpok_t* proof, 
-                                                 const BIGNUM* ring_pedersen_n, 
-                                                 const BIGNUM* paillier_n, 
+static const uint8_t* deserialize_exponent_zkpok(range_proof_exponent_zkpok_t* proof,
+                                                 const BIGNUM* ring_pedersen_n,
+                                                 const BIGNUM* paillier_n,
                                                  const uint8_t* serialized_proof)
 {
-    const uint32_t ring_pedersen_n_size = BN_num_bytes(ring_pedersen_n);
-    const uint32_t paillier_n_size = BN_num_bytes(paillier_n);
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen_n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
     const uint8_t *ptr = serialized_proof;
 
     if (*(const uint32_t*)ptr != ring_pedersen_n_size)
@@ -246,7 +336,7 @@ static const uint8_t* deserialize_exponent_zkpok(range_proof_exponent_zkpok_t* p
         return NULL;
     }
     ptr += ring_pedersen_n_size;
-    
+
     if (!BN_bin2bn(ptr, paillier_n_size * 2, proof->D))
     {
         return NULL;
@@ -255,7 +345,7 @@ static const uint8_t* deserialize_exponent_zkpok(range_proof_exponent_zkpok_t* p
 
     memcpy(proof->Y, ptr, sizeof(elliptic_curve256_point_t));
     ptr += sizeof(elliptic_curve256_point_t);
-    
+
     if (!BN_bin2bn(ptr, ring_pedersen_n_size, proof->T))
     {
         return NULL;
@@ -283,15 +373,16 @@ static const uint8_t* deserialize_exponent_zkpok(range_proof_exponent_zkpok_t* p
     return ptr;
 }
 
-zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, 
-                                                                         const paillier_public_key_t *paillier, 
-                                                                         const elliptic_curve256_algebra_ctx_t *algebra, 
-                                                                         const uint8_t *aad, 
-                                                                         uint32_t aad_len, 
-                                                                         const elliptic_curve256_scalar_t *secret, 
-                                                                         const paillier_ciphertext_t *ciphertext, 
-                                                                         uint8_t *serialized_proof, 
-                                                                         uint32_t proof_len, 
+zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const ring_pedersen_public_t *ring_pedersen,
+                                                                         const paillier_public_key_t *paillier,
+                                                                         const elliptic_curve256_algebra_ctx_t *algebra,
+                                                                         const uint8_t *aad,
+                                                                         uint32_t aad_len,
+                                                                         const elliptic_curve256_scalar_t *secret,
+                                                                         const paillier_ciphertext_t *ciphertext,
+                                                                         const uint8_t use_extended_seed,
+                                                                         uint8_t *serialized_proof,
+                                                                         uint32_t proof_len,
                                                                          uint32_t *real_proof_len)
 {
     BN_CTX *ctx = NULL;
@@ -323,13 +414,13 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
 
     if (!ctx)
         return ZKP_OUT_OF_MEMORY;
-    
+
     if (is_coprime_fast(ciphertext->r, paillier->n, ctx) != 1)
     {
         BN_CTX_free(ctx);
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     BN_CTX_start(ctx);
     alpha = BN_CTX_get(ctx);
     mu = BN_CTX_get(ctx);
@@ -360,9 +451,9 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
     // rand alpha
     if (!BN_rand_range(alpha, tmp))
         goto cleanup;
-    
+
     // rand mu
-    if (!BN_copy(tmp, ring_pedersen->n) || !BN_lshift(tmp, tmp, sizeof(elliptic_curve256_scalar_t)))
+    if (!BN_copy(tmp, ring_pedersen->n) || !BN_lshift(tmp, tmp, sizeof(elliptic_curve256_scalar_t) * 8))
     {
         status = ZKP_OUT_OF_MEMORY;
         goto cleanup;
@@ -372,7 +463,7 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
         goto cleanup;
 
     // rand gamma
-    if (!BN_lshift(tmp, tmp, ZKPOK_EPSILON_SIZE))
+    if (!BN_lshift(tmp, tmp, ZKPOK_EPSILON_SIZE * 8))
     {
         status = ZKP_OUT_OF_MEMORY;
         goto cleanup;
@@ -387,7 +478,7 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
             goto cleanup;
         paillier_status = paillier_encrypt_openssl_internal(paillier, zkpok.D, r, alpha, ctx);
     } while (paillier_status == PAILLIER_ERROR_INVALID_RANDOMNESS);
-    
+
     if (paillier_status != PAILLIER_SUCCESS)
         goto cleanup;
 
@@ -397,15 +488,19 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
         goto cleanup;
     if (!BN_mod(tmp, alpha, q, ctx))
         goto cleanup;
-    BN_bn2binpad(tmp, alpha_bin, sizeof(elliptic_curve256_scalar_t));
+    if (BN_bn2binpad(tmp, alpha_bin, sizeof(elliptic_curve256_scalar_t)) <= 0)
+        goto cleanup;
     if (algebra->generator_mul(algebra, &zkpok.Y, &alpha_bin) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
 
     if (algebra->generator_mul(algebra, &public_point, secret) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
 
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen->n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier->n);
+
     // sample e
-    if (!genarate_exponent_zkpok_seed(&zkpok, ciphertext->ciphertext, &public_point, aad, aad_len, seed))
+    if (!genarate_exponent_zkpok_seed(paillier_n_size, ring_pedersen_n_size, &zkpok, ciphertext->ciphertext, &public_point, aad, aad_len, use_extended_seed, seed))
         goto cleanup;
     if (drng_new(seed, SHA256_DIGEST_LENGTH, &rng) != DRNG_SUCCESS)
     {
@@ -416,7 +511,7 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
     do
     {
         elliptic_curve256_scalar_t val;
-        
+
         if (drng_read_deterministic_rand(rng, val, sizeof(elliptic_curve256_scalar_t)) != DRNG_SUCCESS)
         {
             status = ZKP_UNKNOWN_ERROR;
@@ -431,35 +526,70 @@ zero_knowledge_proof_status range_proof_paillier_exponent_zkpok_generate(const r
         goto cleanup;
     if (!BN_add(zkpok.z1, zkpok.z1, alpha))
         goto cleanup;
-    
+
     if (!BN_mod_exp(zkpok.z2, ciphertext->r, e, paillier->n, ctx))
         goto cleanup;
     if (!BN_mod_mul(zkpok.z2, zkpok.z2, r, paillier->n, ctx))
         goto cleanup;
-    
+
     if (!BN_mul(zkpok.z3, e, mu, ctx))
         goto cleanup;
     if (!BN_add(zkpok.z3, zkpok.z3, gamma))
         goto cleanup;
-    
-    serialize_exponent_zkpok(&zkpok, ring_pedersen->n, paillier->n, serialized_proof);
-    status = ZKP_SUCCESS;
+
+    status = serialize_exponent_zkpok(&zkpok, ring_pedersen->n, paillier->n, serialized_proof) != NULL ? ZKP_SUCCESS : ZKP_OUT_OF_MEMORY;
+
 cleanup:
+
+    if (alpha)
+    {
+        BN_clear(alpha);
+    }
+
+    if (mu)
+    {
+        BN_clear(mu);
+    }
+    
+    if (r)
+    {
+        BN_clear(r);
+    }
+
+    if (gamma)
+    {
+        BN_clear(gamma);
+    }
+
+    if (e)
+    {
+        BN_clear(e);
+    }
+
     if (x)
+    {
         BN_clear(x);
+    }
+    
+    if (tmp)
+    {
+        BN_clear(tmp);
+    }
+
+        
     drng_free(rng);
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
     return status;
 }
 
-zero_knowledge_proof_status range_proof_paillier_encrypt_with_exponent_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, paillier_with_range_proof_t **proof)
+zero_knowledge_proof_status range_proof_paillier_encrypt_with_exponent_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra,
+    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const uint8_t use_extended_seed, paillier_with_range_proof_t **proof)
 {
     paillier_ciphertext_t *ciphertext = NULL;
     paillier_with_range_proof_t *local_proof = NULL;
     zero_knowledge_proof_status status = ZKP_OUT_OF_MEMORY;
-    
+
     if (!paillier || !secret)
         return ZKP_INVALID_PARAMETER;
 
@@ -473,17 +603,25 @@ zero_knowledge_proof_status range_proof_paillier_encrypt_with_exponent_zkpok_gen
     if (!local_proof)
         goto cleanup;
 
-    local_proof->ciphertext_len = BN_num_bytes(ciphertext->ciphertext);
+    local_proof->ciphertext_len = BN_num_bytes(paillier->n2);
     local_proof->ciphertext = (uint8_t*)malloc(local_proof->ciphertext_len);
     local_proof->proof_len = exponent_zkpok_serialized_size(ring_pedersen, paillier);
     local_proof->serialized_proof = (uint8_t*)malloc(local_proof->proof_len);
 
     if (!local_proof->ciphertext || !local_proof->serialized_proof)
+    {
         goto cleanup;
+    }
 
-    BN_bn2bin(ciphertext->ciphertext, local_proof->ciphertext);
-    status = range_proof_paillier_exponent_zkpok_generate(ring_pedersen, paillier, algebra, aad, aad_len, secret, ciphertext, local_proof->serialized_proof, local_proof->proof_len, NULL);
-    
+
+    if (BN_bn2binpad(ciphertext->ciphertext, local_proof->ciphertext, local_proof->ciphertext_len) <= 0)
+    {
+        status = ZKP_UNKNOWN_ERROR;
+        goto cleanup;
+    }
+
+    status = range_proof_paillier_exponent_zkpok_generate(ring_pedersen, paillier, algebra, aad, aad_len, secret, ciphertext, use_extended_seed, local_proof->serialized_proof, local_proof->proof_len, NULL);
+
     if (status == ZKP_SUCCESS)
     {
         *proof = local_proof;
@@ -496,8 +634,15 @@ cleanup:
     return status;
 }
 
-zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pedersen_private_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_point_t *public_point, const paillier_with_range_proof_t *proof)
+zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pedersen_private_t *ring_pedersen,
+                                                              const paillier_public_key_t *paillier,
+                                                              const elliptic_curve256_algebra_ctx_t *algebra,
+                                                              const uint8_t *aad,
+                                                              uint32_t aad_len,
+                                                              const elliptic_curve256_point_t *public_point,
+                                                              const paillier_with_range_proof_t *proof,
+                                                              const uint8_t strict_ciphertext_length,
+                                                              const uint8_t use_extended_seed)
 {
     BN_CTX *ctx = NULL;
     drng_t *rng = NULL;
@@ -511,9 +656,14 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
     elliptic_curve256_scalar_t z1;
     elliptic_curve256_point_t p1;
     elliptic_curve256_point_t p2;
-    
+
     if (!ring_pedersen || !paillier || !algebra || !aad || !aad_len || !public_point || !proof || !proof->ciphertext || !proof->ciphertext_len || !proof->serialized_proof || !proof->proof_len)
         return ZKP_INVALID_PARAMETER;
+
+    if (strict_ciphertext_length && proof->ciphertext_len != (uint32_t)BN_num_bytes(paillier->n2))
+    {
+        return ZKP_INVALID_PARAMETER;
+    }
 
     needed_proof_len = exponent_zkpok_serialized_size(&ring_pedersen->pub, paillier);
     if (proof->proof_len < needed_proof_len)
@@ -523,7 +673,7 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
 
     if (!ctx)
         return ZKP_OUT_OF_MEMORY;
-    
+
     BN_CTX_start(ctx);
 
     e = BN_CTX_get(ctx);
@@ -562,15 +712,29 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
         goto cleanup;
     }
 
+    if (is_coprime_fast(zkpok.S, ring_pedersen->pub.n, ctx) != 1)
+    {
+        status = ZKP_VERIFICATION_FAILED;
+        goto cleanup;
+    }
+    if (is_coprime_fast(zkpok.T, ring_pedersen->pub.n, ctx) != 1)
+    {
+        status = ZKP_VERIFICATION_FAILED;
+        goto cleanup;
+    }
+
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen->pub.n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier->n);
+
     // sample e
-    if (!genarate_exponent_zkpok_seed(&zkpok, tmp1, public_point, aad, aad_len, seed))
+    if (!genarate_exponent_zkpok_seed(paillier_n_size, ring_pedersen_n_size, &zkpok, tmp1, public_point, aad, aad_len, use_extended_seed, seed))
     {
         status = ZKP_UNKNOWN_ERROR;
         goto cleanup;
     }
     if (drng_new(seed, SHA256_DIGEST_LENGTH, &rng) != DRNG_SUCCESS)
         goto cleanup;
-    
+
     if ((size_t)BN_num_bytes(zkpok.z1) > sizeof(elliptic_curve256_scalar_t) + ZKPOK_EPSILON_SIZE)
     {
         status = ZKP_VERIFICATION_FAILED;
@@ -578,7 +742,7 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
     }
 
     q = algebra->order_internal(algebra);
-    
+
     do
     {
         if (drng_read_deterministic_rand(rng, val, sizeof(elliptic_curve256_scalar_t)) != DRNG_SUCCESS)
@@ -619,8 +783,9 @@ zero_knowledge_proof_status range_proof_exponent_zkpok_verify(const ring_pederse
 
     if (!BN_mod(zkpok.z1, zkpok.z1, q, ctx))
         goto cleanup;
-    
-    BN_bn2binpad(zkpok.z1, z1, sizeof(elliptic_curve256_scalar_t));
+
+    if (BN_bn2binpad(zkpok.z1, z1, sizeof(elliptic_curve256_scalar_t)) <= 0)
+        goto cleanup;
     if (algebra->point_mul(algebra, &p1, public_point, &val) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
     if (algebra->add_points(algebra, &p1, &p1, &zkpok.Y) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
@@ -636,170 +801,28 @@ cleanup:
     return status;
 }
 
-zero_knowledge_proof_status range_proof_exponent_zkpok_batch_verify(const ring_pedersen_private_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, uint32_t batch_size, const elliptic_curve256_point_t *public_points, const paillier_with_range_proof_t *proofs)
-{
-    BN_CTX *ctx = NULL;
-    drng_t *rng = NULL;
-    range_proof_exponent_zkpok_t zkpok;
-    uint32_t needed_proof_len;
-    zero_knowledge_proof_status status = ZKP_OUT_OF_MEMORY;
-    BIGNUM *e = NULL, *tmp1 = NULL, *tmp2 = NULL;
-    const BIGNUM *q;
-    uint8_t seed[SHA256_DIGEST_LENGTH];
-    elliptic_curve256_scalar_t val;
-    elliptic_curve256_scalar_t z1;
-    elliptic_curve256_point_t p1;
-    elliptic_curve256_point_t p2;
-    
-    if (!ring_pedersen || !paillier || !algebra || !aad || !aad_len || !public_points || !proofs)
-        return ZKP_INVALID_PARAMETER;
-
-    needed_proof_len = exponent_zkpok_serialized_size(&ring_pedersen->pub, paillier);
-
-    for (size_t i = 0; i < batch_size; i++)
-    {
-        if (!proofs[i].ciphertext || !proofs[i].ciphertext_len || !proofs[i].serialized_proof || proofs[i].proof_len < needed_proof_len)
-            return ZKP_INVALID_PARAMETER;
-    }
-    
-
-    ctx = BN_CTX_new();
-
-    if (!ctx)
-        return ZKP_OUT_OF_MEMORY;
-    
-    BN_CTX_start(ctx);
-
-    e = BN_CTX_get(ctx);
-    tmp1 = BN_CTX_get(ctx);
-    tmp2 = BN_CTX_get(ctx);
-
-    if (!e || !tmp1 || !tmp2)
-        goto cleanup;
-
-    status = init_exponent_zkpok(&zkpok, ctx);
-    if (status != ZKP_SUCCESS)
-        goto cleanup;
-
-    q = algebra->order_internal(algebra);
-
-    status = ZKP_UNKNOWN_ERROR;
-
-    for (size_t i = 0; i < batch_size; i++)
-    {
-        if (!deserialize_exponent_zkpok(&zkpok, ring_pedersen->pub.n, paillier->n, proofs[i].serialized_proof))
-        {
-            status = ZKP_VERIFICATION_FAILED;
-            goto cleanup;
-        }
-
-        if (is_coprime_fast(zkpok.D, paillier->n, ctx) != 1)
-        {
-            status = ZKP_VERIFICATION_FAILED;
-            goto cleanup;
-        }
-
-        if (!BN_bin2bn(proofs[i].ciphertext, proofs[i].ciphertext_len, tmp1))
-        {
-            status = ZKP_OUT_OF_MEMORY;
-            goto cleanup;
-        }
-
-        if (is_coprime_fast(tmp1, paillier->n, ctx) != 1)
-        {
-            status = ZKP_VERIFICATION_FAILED;
-            goto cleanup;
-        }
-
-        // sample e
-        if (!genarate_exponent_zkpok_seed(&zkpok, tmp1, &public_points[i], aad, aad_len, seed))
-        {
-            status = ZKP_UNKNOWN_ERROR;
-            goto cleanup;
-        }
-        
-        if ((size_t)BN_num_bytes(zkpok.z1) > sizeof(elliptic_curve256_scalar_t) + ZKPOK_EPSILON_SIZE)
-        {
-            status = ZKP_VERIFICATION_FAILED;
-            goto cleanup;
-        }
-
-        if (drng_new(seed, SHA256_DIGEST_LENGTH, &rng) != DRNG_SUCCESS)
-            goto cleanup;
-        do
-        {
-            if (drng_read_deterministic_rand(rng, val, sizeof(elliptic_curve256_scalar_t)) != DRNG_SUCCESS)
-            {
-                status = ZKP_UNKNOWN_ERROR;
-                goto cleanup;
-            }
-            if (!BN_bin2bn(val, sizeof(elliptic_curve256_scalar_t), e))
-                goto cleanup;
-        } while (BN_cmp(e, q) >= 0);
-        drng_free(rng);
-        rng = NULL;
-
-        if (paillier_encrypt_openssl_internal(paillier, tmp2, zkpok.z2, zkpok.z1, ctx) != PAILLIER_SUCCESS)
-            goto cleanup;
-        if (!BN_mod_exp(tmp1, tmp1, e, paillier->n2, ctx))
-            goto cleanup;
-        if (!BN_mod_mul(tmp1, tmp1, zkpok.D, paillier->n2, ctx))
-            goto cleanup;
-
-        if (BN_cmp(tmp1, tmp2) != 0)
-        {
-            status = ZKP_VERIFICATION_FAILED;
-            goto cleanup;
-        }
-
-        if (ring_pedersen_create_commitment_internal(&ring_pedersen->pub, zkpok.z1, zkpok.z3, tmp2, ctx) != RING_PEDERSEN_SUCCESS)
-            goto cleanup;
-
-        if (!BN_mod_exp(tmp1, zkpok.S, e, ring_pedersen->pub.n, ctx))
-            goto cleanup;
-        if (!BN_mod_mul(tmp1, tmp1, zkpok.T, ring_pedersen->pub.n, ctx))
-            goto cleanup;
-
-        if (BN_cmp(tmp1, tmp2) != 0)
-        {
-            status = ZKP_VERIFICATION_FAILED;
-            goto cleanup;
-        }
-
-        if (!BN_mod(zkpok.z1, zkpok.z1, q, ctx))
-            goto cleanup;
-        
-        BN_bn2binpad(zkpok.z1, z1, sizeof(z1));
-        if (algebra->point_mul(algebra, &p1, &public_points[i], &val) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-            goto cleanup;
-        if (algebra->add_points(algebra, &p1, &p1, &zkpok.Y) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-            goto cleanup;
-        if (algebra->generator_mul(algebra, &p2, &z1) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
-            goto cleanup;
-
-        status = memcmp(p1, p2, sizeof(elliptic_curve256_point_t)) == 0 ? ZKP_SUCCESS : ZKP_VERIFICATION_FAILED;
-    }
-
-cleanup:
-    drng_free(rng);
-    BN_CTX_end(ctx);
-    BN_CTX_free(ctx);
-    return status;
-}
-
 
 static inline zero_knowledge_proof_status init_diffie_hellman_zkpok(range_proof_diffie_hellman_zkpok_t *zkpok, BN_CTX *ctx)
 {
     return init_exponent_zkpok(&zkpok->base, ctx);
 }
 
-static inline int genarate_diffie_hellman_zkpok_seed(const range_proof_diffie_hellman_zkpok_t *proof, const BIGNUM *ciphertext, const elliptic_curve256_point_t *A, const elliptic_curve256_point_t *B, const elliptic_curve256_point_t *X, const uint8_t *aad, uint32_t aad_len, uint8_t *seed)
+static inline int genarate_diffie_hellman_zkpok_seed(const uint32_t paillier_n_size,
+                                                     const uint32_t ring_pedersen_n_size,
+                                                     const range_proof_diffie_hellman_zkpok_t *proof, 
+                                                     const BIGNUM *ciphertext, 
+                                                     const elliptic_curve256_point_t *A, 
+                                                     const elliptic_curve256_point_t *B, 
+                                                     const elliptic_curve256_point_t *X, 
+                                                     const uint8_t *aad, 
+                                                     uint32_t aad_len, 
+                                                     const uint8_t use_extended_seed,
+                                                     uint8_t *seed)
 {
     SHA256_CTX ctx;
-    
+
     SHA256_Init(&ctx);
-    if (!genarate_zkpok_seed_internal(&proof->base, ciphertext, X, aad, aad_len, &ctx))
+    if (!genarate_zkpok_seed_internal(paillier_n_size, ring_pedersen_n_size, &proof->base, ciphertext, X, aad, aad_len, use_extended_seed, &ctx))
         return 0;
     SHA256_Update(&ctx, *A, sizeof(elliptic_curve256_point_t));
     SHA256_Update(&ctx, *B, sizeof(elliptic_curve256_point_t));
@@ -810,16 +833,19 @@ static inline int genarate_diffie_hellman_zkpok_seed(const range_proof_diffie_he
 
 static inline uint32_t diffie_hellman_zkpok_serialized_size(const ring_pedersen_public_t *pub, const paillier_public_key_t *paillier)
 {
-    return exponent_zkpok_serialized_size(pub, paillier) + 
+    return exponent_zkpok_serialized_size(pub, paillier) +
         sizeof(elliptic_curve256_point_t) + // sizeof(Y)
         sizeof(elliptic_curve256_scalar_t); // sizeof(w)
 }
 
-static inline void serialize_diffie_hellman_zkpok(const range_proof_diffie_hellman_zkpok_t *proof, const BIGNUM *ring_pedersen_n, const BIGNUM *paillier_n, uint8_t *serialized_proof)
+static inline uint8_t* serialize_diffie_hellman_zkpok(const range_proof_diffie_hellman_zkpok_t *proof, const BIGNUM *ring_pedersen_n, const BIGNUM *paillier_n, uint8_t *serialized_proof)
 {
     uint8_t *ptr = serialize_exponent_zkpok(&proof->base, ring_pedersen_n, paillier_n, serialized_proof);
+    if (!ptr)
+        return NULL;
     memcpy(ptr, proof->Y, sizeof(elliptic_curve256_point_t));
     memcpy(ptr + sizeof(elliptic_curve256_point_t), proof->w, sizeof(elliptic_curve256_scalar_t));
+    return ptr + sizeof(elliptic_curve256_point_t) + sizeof(elliptic_curve256_scalar_t);
 }
 
 static inline int deserialize_diffie_hellman_zkpok(range_proof_diffie_hellman_zkpok_t *proof, const BIGNUM *ring_pedersen_n, const BIGNUM *paillier_n, const uint8_t *serialized_proof)
@@ -832,9 +858,19 @@ static inline int deserialize_diffie_hellman_zkpok(range_proof_diffie_hellman_zk
     return 1;
 }
 
-zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_scalar_t *a, const elliptic_curve256_scalar_t *b, const paillier_ciphertext_t *ciphertext, 
-    uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len)
+zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, 
+                                                                      const paillier_public_key_t *paillier, 
+                                                                      const elliptic_curve256_algebra_ctx_t *algebra,
+                                                                      const uint8_t *aad, 
+                                                                      uint32_t aad_len, 
+                                                                      const elliptic_curve256_scalar_t *secret, 
+                                                                      const elliptic_curve256_scalar_t *a, 
+                                                                      const elliptic_curve256_scalar_t *b, const 
+                                                                      paillier_ciphertext_t *ciphertext,
+                                                                      const uint8_t use_extended_seed,
+                                                                      uint8_t *serialized_proof, 
+                                                                      uint32_t proof_len, 
+                                                                      uint32_t *real_proof_len)
 {
     BN_CTX *ctx = NULL;
     drng_t *rng = NULL;
@@ -866,13 +902,13 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
 
     if (!ctx)
         return ZKP_OUT_OF_MEMORY;
-    
+
     if (is_coprime_fast(ciphertext->r, paillier->n, ctx) != 1)
     {
         BN_CTX_free(ctx);
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     BN_CTX_start(ctx);
     alpha = BN_CTX_get(ctx);
     mu = BN_CTX_get(ctx);
@@ -907,9 +943,9 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
     // rand beta
     if (algebra->rand(algebra, &beta) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
-    
+
     // rand mu
-    if (!BN_copy(tmp, ring_pedersen->n) || !BN_lshift(tmp, tmp, sizeof(elliptic_curve256_scalar_t)))
+    if (!BN_copy(tmp, ring_pedersen->n) || !BN_lshift(tmp, tmp, sizeof(elliptic_curve256_scalar_t) * 8))
     {
         status = ZKP_OUT_OF_MEMORY;
         goto cleanup;
@@ -919,7 +955,7 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
         goto cleanup;
 
     // rand gamma
-    if (!BN_lshift(tmp, tmp, ZKPOK_EPSILON_SIZE))
+    if (!BN_lshift(tmp, tmp, ZKPOK_EPSILON_SIZE * 8))
     {
         status = ZKP_OUT_OF_MEMORY;
         goto cleanup;
@@ -934,7 +970,7 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
             goto cleanup;
         paillier_status = paillier_encrypt_openssl_internal(paillier, zkpok.base.D, r, alpha, ctx);
     } while (paillier_status == PAILLIER_ERROR_INVALID_RANDOMNESS);
-    
+
     if (paillier_status != PAILLIER_SUCCESS)
         goto cleanup;
 
@@ -946,8 +982,9 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
         goto cleanup;
     if (!BN_mod(tmp, alpha, q, ctx))
         goto cleanup;
-    BN_bn2binpad(tmp, alpha_bin, sizeof(elliptic_curve256_scalar_t));
-    
+    if (BN_bn2binpad(tmp, alpha_bin, sizeof(elliptic_curve256_scalar_t)) <= 0)
+        goto cleanup;
+
     if (algebra->mul_scalars(algebra, &tmp_scalar, *a, sizeof(elliptic_curve256_scalar_t), beta, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
     if (algebra->add_scalars(algebra, &tmp_scalar, alpha_bin, sizeof(elliptic_curve256_scalar_t), tmp_scalar, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
@@ -966,8 +1003,11 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
     if (algebra->generator_mul(algebra, &X, &tmp_scalar) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS) // Y = A^beta*g^alpha == g^(a*beta+alpha)
         goto cleanup;
 
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen->n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier->n);
+
     // sample e
-    if (!genarate_diffie_hellman_zkpok_seed(&zkpok, ciphertext->ciphertext, &A, &B, &X, aad, aad_len, seed))
+    if (!genarate_diffie_hellman_zkpok_seed(paillier_n_size, ring_pedersen_n_size, &zkpok, ciphertext->ciphertext, &A, &B, &X, aad, aad_len, use_extended_seed, seed))
         goto cleanup;
     if (drng_new(seed, SHA256_DIGEST_LENGTH, &rng) != DRNG_SUCCESS)
     {
@@ -988,12 +1028,12 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
         goto cleanup;
     if (!BN_add(zkpok.base.z1, zkpok.base.z1, alpha))
         goto cleanup;
-    
+
     if (!BN_mod_exp(zkpok.base.z2, ciphertext->r, e, paillier->n, ctx))
         goto cleanup;
     if (!BN_mod_mul(zkpok.base.z2, zkpok.base.z2, r, paillier->n, ctx))
         goto cleanup;
-    
+
     if (!BN_mul(zkpok.base.z3, e, mu, ctx))
         goto cleanup;
     if (!BN_add(zkpok.base.z3, zkpok.base.z3, gamma))
@@ -1003,25 +1043,60 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_generate(const ring
         goto cleanup;
     if (algebra->add_scalars(algebra, &zkpok.w, zkpok.w, sizeof(elliptic_curve256_scalar_t), beta, sizeof(elliptic_curve256_scalar_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
-    
-    serialize_diffie_hellman_zkpok(&zkpok, ring_pedersen->n, paillier->n, serialized_proof);
-    status = ZKP_SUCCESS;
+
+    status = serialize_diffie_hellman_zkpok(&zkpok, ring_pedersen->n, paillier->n, serialized_proof) != NULL ? ZKP_SUCCESS : ZKP_OUT_OF_MEMORY;
+
 cleanup:
+    if (alpha)
+    {
+        BN_clear(alpha);
+    }
+
+    if (mu)
+    {
+        BN_clear(mu);
+    }
+
+    if (r)
+    {
+        BN_clear(r);
+    }
+
+    if (gamma)
+    {
+        BN_clear(gamma);
+    }
+
+    if (e)
+    {
+        BN_clear(e);
+    }
+
     if (x)
+    {
         BN_clear(x);
+    }
+    
+    if (tmp)
+    {
+        BN_clear(tmp);
+    }
+
+    OPENSSL_cleanse(alpha_bin, sizeof(elliptic_curve256_scalar_t));
+    OPENSSL_cleanse(tmp_scalar, sizeof(elliptic_curve256_scalar_t));
     drng_free(rng);
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
     return status;
 }
 
-zero_knowledge_proof_status range_proof_paillier_encrypt_with_diffie_hellman_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_scalar_t *a, const elliptic_curve256_scalar_t *b, paillier_with_range_proof_t **proof)
+zero_knowledge_proof_status range_proof_paillier_encrypt_with_diffie_hellman_zkpok_generate(const ring_pedersen_public_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra,
+    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_scalar_t *secret, const elliptic_curve256_scalar_t *a, const elliptic_curve256_scalar_t *b, const uint8_t use_extended_seed, paillier_with_range_proof_t **proof)
 {
     paillier_ciphertext_t *ciphertext = NULL;
     paillier_with_range_proof_t *local_proof = NULL;
     zero_knowledge_proof_status status = ZKP_OUT_OF_MEMORY;
-    
+
     if (!paillier || !secret)
         return ZKP_INVALID_PARAMETER;
 
@@ -1035,17 +1110,24 @@ zero_knowledge_proof_status range_proof_paillier_encrypt_with_diffie_hellman_zkp
     if (!local_proof)
         goto cleanup;
 
-    local_proof->ciphertext_len = BN_num_bytes(ciphertext->ciphertext);
+    paillier_get_ciphertext(ciphertext, NULL, 0, &local_proof->ciphertext_len);
     local_proof->ciphertext = (uint8_t*)malloc(local_proof->ciphertext_len);
+
     local_proof->proof_len = diffie_hellman_zkpok_serialized_size(ring_pedersen, paillier);
     local_proof->serialized_proof = (uint8_t*)malloc(local_proof->proof_len);
 
     if (!local_proof->ciphertext || !local_proof->serialized_proof)
+    {
         goto cleanup;
+    }
 
-    BN_bn2bin(ciphertext->ciphertext, local_proof->ciphertext);
-    status = range_proof_diffie_hellman_zkpok_generate(ring_pedersen, paillier, algebra, aad, aad_len, secret, a, b, ciphertext, local_proof->serialized_proof, local_proof->proof_len, NULL);
-    
+    if (paillier_get_ciphertext(ciphertext, local_proof->ciphertext, local_proof->ciphertext_len, NULL)  != PAILLIER_SUCCESS)
+    {
+        goto cleanup;
+    }
+
+    status = range_proof_diffie_hellman_zkpok_generate(ring_pedersen, paillier, algebra, aad, aad_len, secret, a, b, ciphertext, use_extended_seed, local_proof->serialized_proof, local_proof->proof_len, NULL);
+
     if (status == ZKP_SUCCESS)
     {
         *proof = local_proof;
@@ -1058,8 +1140,17 @@ cleanup:
     return status;
 }
 
-zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_pedersen_private_t *ring_pedersen, const paillier_public_key_t *paillier, const elliptic_curve256_algebra_ctx_t *algebra, 
-    const uint8_t *aad, uint32_t aad_len, const elliptic_curve256_point_t *public_point, const elliptic_curve256_point_t *A, const elliptic_curve256_point_t *B, const paillier_with_range_proof_t *proof)
+zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_pedersen_private_t *ring_pedersen,
+                                                                    const paillier_public_key_t *paillier,
+                                                                    const elliptic_curve256_algebra_ctx_t *algebra,
+                                                                    const uint8_t *aad,
+                                                                    uint32_t aad_len,
+                                                                    const elliptic_curve256_point_t *public_point,
+                                                                    const elliptic_curve256_point_t *A,
+                                                                    const elliptic_curve256_point_t *B,
+                                                                    const paillier_with_range_proof_t *proof,
+                                                                    const uint8_t strict_ciphertext_length,
+                                                                    const uint8_t use_extended_seed)
 {
     BN_CTX *ctx = NULL;
     drng_t *rng = NULL;
@@ -1073,9 +1164,15 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
     elliptic_curve256_scalar_t z1;
     elliptic_curve256_point_t p1;
     elliptic_curve256_point_t p2;
-    
+
     if (!ring_pedersen || !paillier || !algebra || !aad || !aad_len || !public_point || !A || !B || !proof || !proof->ciphertext || !proof->ciphertext_len || !proof->serialized_proof || !proof->proof_len)
         return ZKP_INVALID_PARAMETER;
+
+
+    if (strict_ciphertext_length && proof->ciphertext_len != (uint32_t)BN_num_bytes(paillier->n2))
+    {
+        return ZKP_INVALID_PARAMETER;
+    }
 
     needed_proof_len = diffie_hellman_zkpok_serialized_size(&ring_pedersen->pub, paillier);
     if (proof->proof_len < needed_proof_len)
@@ -1085,7 +1182,7 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
 
     if (!ctx)
         return ZKP_OUT_OF_MEMORY;
-    
+
     BN_CTX_start(ctx);
 
     e = BN_CTX_get(ctx);
@@ -1132,17 +1229,32 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
         goto cleanup;
     }
 
+    if (is_coprime_fast(zkpok.base.S, ring_pedersen->pub.n, ctx) != 1)
+    {
+        status = ZKP_VERIFICATION_FAILED;
+        goto cleanup;
+    }
+
+    if (is_coprime_fast(zkpok.base.T, ring_pedersen->pub.n, ctx) != 1)
+    {
+        status = ZKP_VERIFICATION_FAILED;
+        goto cleanup;
+    }
+
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen->pub.n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier->n);
+
     // sample e
-    if (!genarate_diffie_hellman_zkpok_seed(&zkpok, tmp1, A, B, public_point, aad, aad_len, seed))
+    if (!genarate_diffie_hellman_zkpok_seed(paillier_n_size, ring_pedersen_n_size, &zkpok, tmp1, A, B, public_point, aad, aad_len, use_extended_seed, seed))
     {
         status = ZKP_UNKNOWN_ERROR;
         goto cleanup;
     }
     if (drng_new(seed, SHA256_DIGEST_LENGTH, &rng) != DRNG_SUCCESS)
         goto cleanup;
-    
+
     q = algebra->order_internal(algebra);
-    
+
     do
     {
         if (drng_read_deterministic_rand(rng, val, sizeof(elliptic_curve256_scalar_t)) != DRNG_SUCCESS)
@@ -1183,8 +1295,9 @@ zero_knowledge_proof_status range_proof_diffie_hellman_zkpok_verify(const ring_p
 
     if (!BN_mod(zkpok.base.z1, zkpok.base.z1, q, ctx))
         goto cleanup;
-    
-    BN_bn2binpad(zkpok.base.z1, z1, sizeof(elliptic_curve256_scalar_t));
+
+    if (BN_bn2binpad(zkpok.base.z1, z1, sizeof(elliptic_curve256_scalar_t)) <= 0)
+        goto cleanup;
     if (algebra->point_mul(algebra, &p1, A, &zkpok.w) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         goto cleanup;
     if (algebra->generator_mul(algebra, &p2, &z1) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
@@ -1230,7 +1343,7 @@ void range_proof_free_paillier_with_range_proof(paillier_with_range_proof_t *pro
 // paillier large factors zkp
 static inline uint32_t paillier_large_factors_zkp_serialized_size(const ring_pedersen_public_t *pub, const paillier_public_key_t *paillier)
 {
-    return 
+    return
         sizeof(uint32_t) + // sizeof(ring_pedersen->n)
         sizeof(uint32_t) + // sizeof(paillier->n)
         5 * BN_num_bytes(pub->n) + // sizeof(P) + sizeof(Q) + sizeof(A) + sizeof(B) + sizeof(T)
@@ -1243,8 +1356,8 @@ static inline uint32_t paillier_large_factors_zkp_serialized_size(const ring_ped
 // this function doesn't verify serialized_proof size as it's done in range_proof_paillier_large_factors_zkp_generate function
 static inline uint8_t* serialize_paillier_large_factors_zkp(const range_proof_paillier_large_factors_zkp_t *proof, const BIGNUM *ring_pedersen_n, const BIGNUM *paillier_n, uint8_t *serialized_proof)
 {
-    const uint32_t ring_pedersen_n_size = BN_num_bytes(ring_pedersen_n);
-    const uint32_t paillier_n_size = BN_num_bytes(paillier_n);
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen_n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
     const uint32_t lambda_size = ZKPOK_L_SIZE + ring_pedersen_n_size + paillier_n_size;
     const uint32_t z_size = ZKPOK_L_SIZE + ZKPOK_EPSILON_SIZE + paillier_n_size / 2;
     const uint32_t w_size = ZKPOK_L_SIZE + ZKPOK_EPSILON_SIZE + ring_pedersen_n_size;
@@ -1264,39 +1377,50 @@ static inline uint8_t* serialize_paillier_large_factors_zkp(const range_proof_pa
     ptr += sizeof(uint32_t);
     *(uint32_t*)ptr = paillier_n_size;
     ptr += sizeof(uint32_t);
-    
-    BN_bn2binpad(proof->P, ptr, ring_pedersen_n_size);
+
+    if (BN_bn2binpad(proof->P, ptr, ring_pedersen_n_size) <= 0)
+        return NULL;
     ptr += ring_pedersen_n_size;
-    BN_bn2binpad(proof->Q, ptr, ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->Q, ptr, ring_pedersen_n_size) <= 0)
+        return NULL;
     ptr += ring_pedersen_n_size;
-    BN_bn2binpad(proof->A, ptr, ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->A, ptr, ring_pedersen_n_size) <= 0)
+        return NULL;
     ptr += ring_pedersen_n_size;
-    BN_bn2binpad(proof->B, ptr, ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->B, ptr, ring_pedersen_n_size) <= 0)
+        return NULL;
     ptr += ring_pedersen_n_size;
-    BN_bn2binpad(proof->T, ptr, ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->T, ptr, ring_pedersen_n_size) <= 0)
+        return NULL;
     ptr += ring_pedersen_n_size;
-    BN_bn2binpad(proof->lambda, ptr, lambda_size);
+    if (BN_bn2binpad(proof->lambda, ptr, lambda_size) <= 0)
+        return NULL;
     ptr += lambda_size;
-    BN_bn2binpad(proof->z1, ptr, z_size);
+    if (BN_bn2binpad(proof->z1, ptr, z_size) <= 0)
+        return NULL;
     ptr += z_size;
-    BN_bn2binpad(proof->z2, ptr, z_size);
+    if (BN_bn2binpad(proof->z2, ptr, z_size) <= 0)
+        return NULL;
     ptr += z_size;
-    BN_bn2binpad(proof->w1, ptr, w_size);
+    if (BN_bn2binpad(proof->w1, ptr, w_size) <= 0)
+        return NULL;
     ptr += w_size;
-    BN_bn2binpad(proof->w2, ptr, w_size);
+    if (BN_bn2binpad(proof->w2, ptr, w_size) <= 0)
+        return NULL;
     ptr += w_size;
-    BN_bn2binpad(proof->v, ptr, v_size);
+    if (BN_bn2binpad(proof->v, ptr, v_size) <= 0)
+        return NULL;
     ptr += v_size;
     return ptr;
 }
 
-static inline const uint8_t* deserialize_paillier_large_factors_zkp(range_proof_paillier_large_factors_zkp_t *proof, 
-                                                                    const BIGNUM *ring_pedersen_n, 
-                                                                    const BIGNUM *paillier_n, 
+static inline const uint8_t* deserialize_paillier_large_factors_zkp(range_proof_paillier_large_factors_zkp_t *proof,
+                                                                    const BIGNUM *ring_pedersen_n,
+                                                                    const BIGNUM *paillier_n,
                                                                     const uint8_t *serialized_proof)
 {
-    const uint32_t ring_pedersen_n_size = BN_num_bytes(ring_pedersen_n);
-    const uint32_t paillier_n_size = BN_num_bytes(paillier_n);
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen_n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
     const uint32_t lambda_size = ZKPOK_L_SIZE + ring_pedersen_n_size + paillier_n_size;
     const uint32_t z_size = ZKPOK_L_SIZE + ZKPOK_EPSILON_SIZE + paillier_n_size / 2;
     const uint32_t w_size = ZKPOK_L_SIZE + ZKPOK_EPSILON_SIZE + ring_pedersen_n_size;
@@ -1358,28 +1482,118 @@ static zero_knowledge_proof_status init_paillier_large_factors_zkp(range_proof_p
     zkp->w1 = BN_CTX_get(ctx);
     zkp->w2 = BN_CTX_get(ctx);
     zkp->v = BN_CTX_get(ctx);
-    
+
     if (zkp->P && zkp->Q && zkp->A && zkp->B && zkp->T && zkp->lambda && zkp->z1 && zkp->z2 && zkp->w1 && zkp->w2 && zkp->v)
         return ZKP_SUCCESS;
     return ZKP_OUT_OF_MEMORY;
 }
 
-static inline int genarate_paillier_large_factors_zkp_seed(const range_proof_paillier_large_factors_zkp_t *proof, 
-                                                           const BIGNUM *ring_pedersen_n, 
-                                                           const BIGNUM *paillier_n, 
-                                                           const uint8_t *aad, 
-                                                           uint32_t aad_len, 
+
+static inline int genarate_paillier_large_factors_zkp_seed_ex(const range_proof_paillier_large_factors_zkp_t *proof,
+                                                              const BIGNUM *ring_pedersen_n,
+                                                              const BIGNUM *paillier_n,
+                                                              const uint8_t *aad,
+                                                              uint32_t aad_len,
+                                                              uint8_t *seed)
+{
+    SHA256_CTX ctx;
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen_n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
+    const uint32_t lambda_size = ZKPOK_L_SIZE + ring_pedersen_n_size + paillier_n_size;
+    uint8_t *n = (uint8_t*)malloc(lambda_size); //lambda has the maximum size in the proof
+
+    if (!n)
+    {
+        return 0;
+    }
+
+
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, PAILLIER_LARGE_FACTORS_ZKP_SALT, sizeof(PAILLIER_LARGE_FACTORS_ZKP_SALT));
+    if (aad)
+    {
+        SHA256_Update(&ctx, aad, aad_len);
+    }
+
+    if (BN_bn2binpad(paillier_n, n, paillier_n_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, paillier_n_size);
+
+    // hash P
+    assert ((uint32_t)BN_num_bytes(proof->P) <= ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->P, n, ring_pedersen_n_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, ring_pedersen_n_size);
+
+    // hash Q
+    assert ((uint32_t)BN_num_bytes(proof->Q) <= ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->Q, n, ring_pedersen_n_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, ring_pedersen_n_size);
+
+    // hash A
+    assert ((uint32_t)BN_num_bytes(proof->A) <= ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->A, n, ring_pedersen_n_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, ring_pedersen_n_size);
+
+    // hash B
+    assert ((uint32_t)BN_num_bytes(proof->B) <= ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->B, n, ring_pedersen_n_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, ring_pedersen_n_size);
+
+    // hash T
+    assert ((uint32_t)BN_num_bytes(proof->T) <= ring_pedersen_n_size);
+    if (BN_bn2binpad(proof->T, n, ring_pedersen_n_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, ring_pedersen_n_size);
+
+    // hash lambda
+    assert ((uint32_t)BN_num_bytes(proof->lambda) <= lambda_size);
+    if (BN_bn2binpad(proof->lambda, n, lambda_size) <= 0)
+    {
+        goto error;
+    }
+    SHA256_Update(&ctx, n, lambda_size);
+
+    free(n);
+    SHA256_Final(seed, &ctx);
+    return 1;
+
+error:
+    free(n);
+    return 0;
+}
+
+static inline int genarate_paillier_large_factors_zkp_seed(const range_proof_paillier_large_factors_zkp_t *proof,
+                                                           const BIGNUM *ring_pedersen_n,
+                                                           const BIGNUM *paillier_n,
+                                                           const uint8_t *aad,
+                                                           uint32_t aad_len,
                                                            uint8_t *seed)
 {
     SHA256_CTX ctx;
-    const uint32_t ring_pedersen_n_size = BN_num_bytes(ring_pedersen_n);
-    const uint32_t paillier_n_size = BN_num_bytes(paillier_n);
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(ring_pedersen_n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier_n);
     const uint32_t lambda_size = ZKPOK_L_SIZE + ring_pedersen_n_size + paillier_n_size;
     uint8_t *n = (uint8_t*)malloc(lambda_size); //lambda has the maximum size in the proof
-    
+
     if (!n)
         return 0;
-    
+
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, PAILLIER_LARGE_FACTORS_ZKP_SALT, sizeof(PAILLIER_LARGE_FACTORS_ZKP_SALT));
     if (aad)
@@ -1403,7 +1617,14 @@ static inline int genarate_paillier_large_factors_zkp_seed(const range_proof_pai
     return 1;
 }
 
-zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(const paillier_private_key_t *priv, const ring_pedersen_public_t *ring_pedersen, const uint8_t *aad, uint32_t aad_len, uint8_t *serialized_proof, uint32_t proof_len, uint32_t *real_proof_len)
+zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(const paillier_private_key_t *priv,
+                                                                            const ring_pedersen_public_t *ring_pedersen,
+                                                                            const uint8_t *aad,
+                                                                            uint32_t aad_len,
+                                                                            const uint8_t use_extended_seed,
+                                                                            uint8_t *serialized_proof,
+                                                                            uint32_t proof_len,
+                                                                            uint32_t *real_proof_len)
 {
     BN_CTX *ctx = NULL;
     range_proof_paillier_large_factors_zkp_t zkp;
@@ -1438,7 +1659,7 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(cons
 
     if (!ctx)
         return ZKP_OUT_OF_MEMORY;
-    
+
     BN_CTX_start(ctx);
     alpha = BN_CTX_get(ctx);
     beta = BN_CTX_get(ctx);
@@ -1474,7 +1695,7 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(cons
         goto cleanup;
     if (!BN_rand(y, w_size * 8, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY))
         goto cleanup;
-    
+
     if (RING_PEDERSEN_SUCCESS != ring_pedersen_create_commitment_internal(ring_pedersen, priv->p, mu, zkp.P, ctx))
         goto cleanup;
     if (RING_PEDERSEN_SUCCESS != ring_pedersen_create_commitment_internal(ring_pedersen, priv->q, sigma, zkp.Q, ctx))
@@ -1486,15 +1707,27 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(cons
     if (!BN_mod_exp2_mont(zkp.T, zkp.Q, alpha, ring_pedersen->t, r, ring_pedersen->n, ctx, ring_pedersen->mont))
         goto cleanup;
 
-    if (!genarate_paillier_large_factors_zkp_seed(&zkp, ring_pedersen->n, priv->pub.n, aad, aad_len, e_val))
+    if (use_extended_seed)
     {
-        status = ZKP_OUT_OF_MEMORY;
-        goto cleanup;
+        if (!genarate_paillier_large_factors_zkp_seed_ex(&zkp, ring_pedersen->n, priv->pub.n, aad, aad_len, e_val))
+        {
+            status = ZKP_OUT_OF_MEMORY;
+            goto cleanup;
+        }
     }
+    else
+    {
+        if (!genarate_paillier_large_factors_zkp_seed(&zkp, ring_pedersen->n, priv->pub.n, aad, aad_len, e_val))
+        {
+            status = ZKP_OUT_OF_MEMORY;
+            goto cleanup;
+        }
+    }
+
 
     if (!BN_bin2bn(e_val, sizeof(elliptic_curve256_scalar_t), e))
         goto cleanup;
-    
+
     if (!BN_mul(zkp.z1, e, priv->p, ctx) || !BN_add(zkp.z1, zkp.z1, alpha))
         goto cleanup;
     if (!BN_mul(zkp.z2, e, priv->q, ctx) || !BN_add(zkp.z2, zkp.z2, beta))
@@ -1512,12 +1745,56 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_generate(cons
     status = serialize_paillier_large_factors_zkp(&zkp, ring_pedersen->n, priv->pub.n, serialized_proof) ? ZKP_SUCCESS : ZKP_INVALID_PARAMETER;
 
 cleanup:
+    if (alpha)
+    {
+        BN_clear(alpha);
+    }
+    if (beta)
+    {
+        BN_clear(beta);
+    }
+    if (mu)
+    {
+        BN_clear(mu);
+    }
+    if (sigma)
+    {
+        BN_clear(sigma);
+    }
+    if (r)
+    {
+        BN_clear(r);
+    }
+    if (e)
+    {
+        BN_clear(e);
+    }
+    if (x)
+    {
+        BN_clear(x);
+    }
+    if (y)
+    {
+        BN_clear(y);
+    }
+    if (tmp)
+    {
+        BN_clear(tmp);
+    }
+    OPENSSL_cleanse(e_val, sizeof(elliptic_curve256_scalar_t));
+
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
     return status;
 }
 
-zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_verify(const paillier_public_key_t *pub, const ring_pedersen_private_t *ring_pedersen, const uint8_t *aad, uint32_t aad_len, const uint8_t *serialized_proof, uint32_t proof_len)
+zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_verify(const paillier_public_key_t *pub,
+                                                                          const ring_pedersen_private_t *ring_pedersen,
+                                                                          const uint8_t *aad,
+                                                                          uint32_t aad_len,
+                                                                          const uint8_t use_extended_seed,
+                                                                          const uint8_t *serialized_proof,
+                                                                          uint32_t proof_len)
 {
     BN_CTX *ctx = NULL;
     range_proof_paillier_large_factors_zkp_t zkp;
@@ -1538,9 +1815,9 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_verify(const 
 
     if (!ctx)
         return ZKP_OUT_OF_MEMORY;
-    
+
     BN_CTX_start(ctx);
-    
+
     e = BN_CTX_get(ctx);
     R = BN_CTX_get(ctx);
     tmp1 = BN_CTX_get(ctx);
@@ -1561,10 +1838,21 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_zkp_verify(const 
     }
 
     // sample e
-    if (!genarate_paillier_large_factors_zkp_seed(&zkp, ring_pedersen->pub.n, pub->n, aad, aad_len, e_val))
+    if (use_extended_seed)
     {
-        status = ZKP_UNKNOWN_ERROR;
-        goto cleanup;
+        if (!genarate_paillier_large_factors_zkp_seed_ex(&zkp, ring_pedersen->pub.n, pub->n, aad, aad_len, e_val))
+        {
+            status = ZKP_UNKNOWN_ERROR;
+            goto cleanup;
+        }
+    }
+    else
+    {
+        if (!genarate_paillier_large_factors_zkp_seed(&zkp, ring_pedersen->pub.n, pub->n, aad, aad_len, e_val))
+        {
+            status = ZKP_UNKNOWN_ERROR;
+            goto cleanup;
+        }
     }
     if (!BN_bin2bn(e_val, sizeof(elliptic_curve256_scalar_t), e))
             goto cleanup;
@@ -1625,15 +1913,14 @@ cleanup:
  *
  *********************************************************/
 
-// it is expected that the caller would call BN_CTX_start() 
+// it is expected that the caller would call BN_CTX_start()
 // before calling this function and BN_CTX_end() after calling it
-static inline zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_initialize(range_proof_paillier_large_factors_quadratic_zkp_t* zkp, BN_CTX *ctx) 
+static inline zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_initialize(range_proof_paillier_large_factors_quadratic_zkp_t* zkp, BN_CTX *ctx)
 {
     if (!zkp || !ctx)
     {
         return ZKP_INVALID_PARAMETER;
     }
-        
     OPENSSL_cleanse(zkp, sizeof(range_proof_paillier_large_factors_quadratic_zkp_t));
 
     zkp->setup.d_mont = BN_MONT_CTX_new();
@@ -1670,24 +1957,24 @@ static inline zero_knowledge_proof_status range_proof_paillier_large_factors_qua
     {
         return ZKP_SUCCESS;
     }
-    
+
     BN_MONT_CTX_free(zkp->setup.d_mont);
     zkp->setup.d_mont = NULL;
 
     return ZKP_OUT_OF_MEMORY;
 }
 
-// "nothing up my sleeve" refers to the principle of transparency 
-// in the generation of constants or parameters used in cryptographic algorithms. 
-// The phrase means that the creators of the cryptographic system are not hiding any 
+// "nothing up my sleeve" refers to the principle of transparency
+// in the generation of constants or parameters used in cryptographic algorithms.
+// The phrase means that the creators of the cryptographic system are not hiding any
 // hidden backdoors or weaknesses in the design by using arbitrary or suspicious values.
 // generates g and h as nothing-up-my-sleeve based on aad
-static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate_basis(BIGNUM* g, 
-                                                                                       BIGNUM* h, 
-                                                                                       const BIGNUM* d, 
-                                                                                       const uint8_t* aad, 
-                                                                                       uint32_t aad_len, 
-                                                                                       BN_CTX *ctx) 
+static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate_basis(BIGNUM* g,
+                                                                                       BIGNUM* h,
+                                                                                       const BIGNUM* d,
+                                                                                       const uint8_t* aad,
+                                                                                       uint32_t aad_len,
+                                                                                       BN_CTX *ctx)
 {
     drng_t* rng = NULL;
     long ret = -1;
@@ -1696,6 +1983,11 @@ static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate
     const uint32_t salted_msg_len = (uint32_t)sizeof(PAILLER_LARGE_FACTORS_QUADRATIC_ZKP_SEED) + aad_len + d_size;
 
     #define BIAS_PROTECTION_BYTES 16
+    #define MAX_AAD_LEN 4096
+    if (d_size > MAX_D_SIZE || aad_len > MAX_AAD_LEN)
+    {
+        goto cleanup; //protect from stack overflow. Normally should be around 3K
+    }
 
     uint8_t* buffer = (uint8_t*)alloca(salted_msg_len + BIAS_PROTECTION_BYTES);
 
@@ -1704,48 +1996,48 @@ static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate
     BN_bn2bin(d, buffer + sizeof(PAILLER_LARGE_FACTORS_QUADRATIC_ZKP_SEED) + aad_len );
 
     ret = convert_drng_to_zkp_status(drng_new(buffer, salted_msg_len, &rng));
-    if (ret != ZKP_SUCCESS) 
+    if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
 
     // generate 'g' as nothing-up-my-sleeve
     ret = convert_drng_to_zkp_status(drng_read_deterministic_rand(rng, buffer, d_size  + BIAS_PROTECTION_BYTES));
-    if (ret != ZKP_SUCCESS) 
+    if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-    
+
     ret = -1; //reset ret to openssl error
 
-    if (!BN_bin2bn(buffer, d_size  + BIAS_PROTECTION_BYTES, g)) 
+    if (!BN_bin2bn(buffer, d_size  + BIAS_PROTECTION_BYTES, g))
     {
         goto cleanup;
     }
 
     // make sure it's a square mod d
-    if (!BN_mod_sqr(g, g, d, ctx)) 
+    if (!BN_mod_sqr(g, g, d, ctx))
     {
         goto cleanup;
     }
 
     // generate 'h' as nothing-up-my-sleeve
     ret = convert_drng_to_zkp_status(drng_read_deterministic_rand(rng, buffer, d_size  + BIAS_PROTECTION_BYTES));
-    if (ret != ZKP_SUCCESS) 
+    if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
 
     ret = -1; //reset ret to openssl error
 
-    if (!BN_bin2bn(buffer, d_size  + BIAS_PROTECTION_BYTES, h)) 
+    if (!BN_bin2bn(buffer, d_size  + BIAS_PROTECTION_BYTES, h))
     {
-        
+
         goto cleanup;
     }
 
     // make sure it's a square mod d
-    if (!BN_mod_sqr(h, h, d, ctx)) 
+    if (!BN_mod_sqr(h, h, d, ctx))
     {
         goto cleanup;
     }
@@ -1760,11 +2052,11 @@ cleanup:
     }
 
     drng_free(rng);
-    
+
     return ret;
 }
 
-uint32_t range_proof_paillier_large_factors_quadratic_zkp_compute_d_bitsize(const paillier_public_key_t* pub) 
+uint32_t range_proof_paillier_large_factors_quadratic_zkp_compute_d_bitsize(const paillier_public_key_t* pub)
 {
     if (!pub)
     {
@@ -1780,16 +2072,16 @@ uint32_t range_proof_paillier_large_factors_quadratic_zkp_compute_d_bitsize(cons
 // Uses predefined or generates a prime d which is large enough to hold the result
 // when calculates P = g ^ p * h ^ r in mod d  AND  Q = g ^ q * h ^ s in mod d
 // where r and s are random
-static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate_setup(paillier_large_factors_quadratic_setup_t* setup, 
-                                                                                       BIGNUM* r, 
-                                                                                       BIGNUM* s, 
-                                                                                       BIGNUM* g, 
-                                                                                       BIGNUM* h, 
+static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate_setup(paillier_large_factors_quadratic_setup_t* setup,
+                                                                                       BIGNUM* r,
+                                                                                       BIGNUM* s,
+                                                                                       BIGNUM* g,
+                                                                                       BIGNUM* h,
                                                                                        const BIGNUM* d,
-                                                                                       const paillier_private_key_t* priv, 
-                                                                                       const uint8_t* aad, 
-                                                                                       const uint32_t aad_len, 
-                                                                                       BN_CTX *ctx) 
+                                                                                       const paillier_private_key_t* priv,
+                                                                                       const uint8_t* aad,
+                                                                                       const uint32_t aad_len,
+                                                                                       BN_CTX *ctx)
 {
     if (!setup || !r || !s || !g || !h || !priv || (aad && !aad_len) || (!aad && aad_len) || !ctx)
     {
@@ -1803,7 +2095,7 @@ static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate
     if (d)
     {
         //verify that d is big enough and it is a prime
-        if ((uint32_t)BN_num_bits(d) < d_bitsize || !BN_is_prime_ex(d, BN_prime_checks, ctx, NULL))
+        if ((uint32_t)BN_num_bits(d) < d_bitsize || BN_is_prime_ex(d, BN_prime_checks, ctx, NULL) != 1)
         {
             ret = ZKP_INVALID_PARAMETER;
             goto cleanup;
@@ -1812,10 +2104,10 @@ static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate
         {
             goto cleanup;
         }
-    } 
-    else 
+    }
+    else
     {
-        do 
+        do
         {
             //generate safe prime - VERY LARGE and slow
             if (!BN_generate_prime_ex(setup->d, d_bitsize, 1, NULL, NULL, NULL))
@@ -1832,7 +2124,7 @@ static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate
     }
 
     // if d was given, verify that it is a strong prime
-    if (d && !BN_is_prime_ex(setup->d_minus_1_over_2, BN_prime_checks, ctx, NULL))
+    if (d && BN_is_prime_ex(setup->d_minus_1_over_2, BN_prime_checks, ctx, NULL) != 1)
     {
         ret = ZKP_INVALID_PARAMETER;
         goto cleanup;
@@ -1848,28 +2140,28 @@ static inline zero_knowledge_proof_status range_proof_pailler_quadratic_generate
     {
         goto cleanup;
     }
-    
+
     ret = -1; //cleanup ret for openssl errors
 
     // Generate P and Q
-    if (!BN_rand_range(r, setup->d_minus_1_over_2) || 
-        !BN_rand_range(s, setup->d_minus_1_over_2) )
+    if (!BN_rand(r, 2 * ZKPOK_OPTIM_L_SIZE(BN_num_bits(priv->pub.n)) * 8, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) ||
+        !BN_rand(s, 2 * ZKPOK_OPTIM_L_SIZE(BN_num_bits(priv->pub.n)) * 8, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) )
     {
         goto cleanup;
     }
 
-    // P = g ^ p * h ^ r in mod d    
+    // P = g ^ p * h ^ r in mod d
     if (!BN_mod_exp2_mont(setup->P, g, priv->p, h, r, setup->d, ctx, setup->d_mont))
     {
         goto cleanup;
     }
-    
+
     // Q = g ^ q * h ^ s in mod d
     if (!BN_mod_exp2_mont(setup->Q, g, priv->q, h, s, setup->d, ctx, setup->d_mont))
     {
         goto cleanup;
     }
-    
+
     ret = ZKP_SUCCESS;
 
 cleanup:
@@ -1882,187 +2174,197 @@ cleanup:
     return ret;
 }
 
-static inline int generate_paillier_large_factors_quadratic_zkp_seed(const range_proof_paillier_large_factors_quadratic_zkp_t *proof, 
-                                                                     const paillier_public_key_t *pub, 
-                                                                     const uint8_t *aad, 
-                                                                     const uint32_t aad_len, 
+static inline int generate_paillier_large_factors_quadratic_zkp_seed(const range_proof_paillier_large_factors_quadratic_zkp_t *proof,
+                                                                     const paillier_public_key_t *pub,
+                                                                     const uint8_t *aad,
+                                                                     const uint32_t aad_len,
                                                                      uint8_t *seed)
 {
     SHA256_CTX ctx;
-    const uint32_t d_size = BN_num_bytes(proof->setup.d);
-    if (d_size > 4096)
+    const uint32_t d_size = (uint32_t)BN_num_bytes(proof->setup.d);
+    const uint32_t n_size = (uint32_t)BN_num_bytes(pub->n);
+
+    if (d_size > MAX_D_SIZE ||
+        n_size > d_size)
     {
         return 0; //protect from stack overflow. Normally should be around 3K
     }
 
     uint8_t *tmp = (uint8_t*)alloca(d_size); //use alloca for fast allocation
-    
+
+
     SHA256_Init(&ctx);
     SHA256_Update(&ctx, PAILLIER_LARGE_FACTORS_ZKP_SALT, sizeof(PAILLIER_LARGE_FACTORS_ZKP_SALT));
     if (aad)
     {
         SHA256_Update(&ctx, aad, aad_len);
     }
-        
-    if (!BN_bn2bin(pub->n, tmp))
-    {
-        return 0;
-    }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(pub->n));
 
-    if (!BN_bn2bin(proof->setup.d, tmp))
+    if (BN_bn2binpad(pub->n, tmp, n_size) <= 0)
     {
         return 0;
     }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(proof->setup.d));
+    SHA256_Update(&ctx, tmp, n_size);
 
-    if (!BN_bn2bin(proof->setup.P, tmp))
+    if (BN_bn2binpad(proof->setup.d, tmp, d_size) <= 0)
     {
         return 0;
     }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(proof->setup.P));
+    SHA256_Update(&ctx, tmp, d_size);
 
-    if (!BN_bn2bin(proof->setup.Q, tmp))
+    assert((uint32_t)BN_num_bytes(proof->setup.P) <= d_size);
+    if (BN_bn2binpad(proof->setup.P, tmp, d_size) <= 0)
     {
         return 0;
     }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(proof->setup.Q));
+    SHA256_Update(&ctx, tmp, d_size);
 
-    if (!BN_bn2bin(proof->A, tmp))
+    assert((uint32_t)BN_num_bytes(proof->setup.Q) <= d_size);
+    if (BN_bn2binpad(proof->setup.Q, tmp, d_size) <= 0)
     {
         return 0;
     }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(proof->A));
+    SHA256_Update(&ctx, tmp, d_size);
 
-    if (!BN_bn2bin(proof->B, tmp))
+    assert((uint32_t)BN_num_bytes(proof->A) <= d_size);
+    if (BN_bn2binpad(proof->A, tmp, d_size) <= 0)
     {
         return 0;
     }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(proof->B));
-    
-    if (!BN_bn2bin(proof->C, tmp))
+    SHA256_Update(&ctx, tmp, d_size);
+
+    assert((uint32_t)BN_num_bytes(proof->B) <= d_size);
+    if (BN_bn2binpad(proof->B, tmp, d_size) <= 0)
     {
         return 0;
     }
-    SHA256_Update(&ctx, tmp, BN_num_bytes(proof->C));
+    SHA256_Update(&ctx, tmp, d_size);
+
+    assert((uint32_t)BN_num_bytes(proof->C) <= d_size);
+    if (BN_bn2binpad(proof->C, tmp, d_size) <= 0)
+    {
+        return 0;
+    }
+    SHA256_Update(&ctx, tmp, d_size);
 
     SHA256_Final(seed, &ctx);
 
     return 1;
-    
-}   
+
+}
 
 static inline uint32_t paillier_large_factors_quadratic_z_size_bytes(const uint32_t n_bitlsize)
 {
     return ((n_bitlsize + 1) / 2 + ((ZKPOK_OPTIM_L_SIZE(n_bitlsize) + ZKPOK_OPTIM_NU_SIZE(n_bitlsize)) * 8 ) + 7) / 8;
 }
 
-static inline uint8_t* serialize_paillier_large_factors_quadratic(const range_proof_paillier_large_factors_quadratic_zkp_t* zkp, 
+static inline uint8_t* serialize_paillier_large_factors_quadratic(const range_proof_paillier_large_factors_quadratic_zkp_t* zkp,
                                                                   const uint32_t n_bitlsize,
-                                                                  uint8_t *serialized_proof) 
+                                                                  uint8_t *serialized_proof)
 {
     uint8_t* ptr = serialized_proof;
     const uint32_t d_size = (uint32_t)BN_num_bytes(zkp->setup.d);
     const uint32_t z_size = paillier_large_factors_quadratic_z_size_bytes(n_bitlsize);
+    const uint32_t lambda_size = (3 * ZKPOK_OPTIM_L_SIZE(n_bitlsize)) + ZKPOK_OPTIM_NU_SIZE(n_bitlsize);
 
     *(uint32_t*)ptr =  d_size;
     ptr += sizeof(uint32_t);
 
-    if (!BN_bn2binpad(zkp->setup.d, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->setup.d, ptr, d_size) <= 0)
     {
         return NULL;
     }
     ptr += d_size; // store sizeof(uint32_t) + 1 * d_size
 
-    if (!BN_bn2binpad(zkp->setup.P, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->setup.P, ptr, d_size) <= 0)
     {
         return NULL;
     }
     ptr += d_size; // store sizeof(uint32_t) + 2 * d_size
 
-    if (!BN_bn2binpad(zkp->setup.Q, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->setup.Q, ptr, d_size) <= 0)
     {
         return NULL;
     }
     ptr += d_size; // store sizeof(uint32_t) + 3 * d_size
 
-    if (!BN_bn2binpad(zkp->A, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->A, ptr, d_size) <= 0)
     {
-        return NULL; 
+        return NULL;
     }
     ptr += d_size; // store sizeof(uint32_t) + 4 * d_size
 
-    if (!BN_bn2binpad(zkp->B, ptr, d_size))
+    if (BN_bn2binpad(zkp->B, ptr, d_size) <= 0)
     {
         return NULL;
     }
     ptr += d_size; // store sizeof(uint32_t) + 5 * d_size
 
-    if (!BN_bn2binpad(zkp->C, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->C, ptr, d_size) <= 0)
     {
         return NULL;
     }
     ptr += d_size; // store sizeof(uint32_t) + 6 * d_size
 
     assert((uint32_t)BN_num_bytes(zkp->z1) <= z_size); //can be smaller because depends on a random value of alpha
-    if (!BN_bn2binpad(zkp->z1, ptr, z_size))
+    if (BN_bn2binpad(zkp->z1, ptr, z_size) <= 0)
     {
         return NULL;
     }
     ptr += z_size; // store sizeof(uint32_t) + 6 * d_size +  z_size
 
     assert((uint32_t)BN_num_bytes(zkp->z2) <= z_size); //can be smalle because depends on a random value of beta
-    if (!BN_bn2binpad(zkp->z2, ptr, z_size))
+    if (BN_bn2binpad(zkp->z2, ptr, z_size) <= 0)
     {
         return NULL;
     }
     ptr += z_size; // store sizeof(uint32_t) + 6 * d_size +  2 * z_size
 
-    if (!BN_bn2binpad(zkp->lambda1, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->lambda1, ptr, lambda_size) <= 0)
     {
         return NULL;
     }
-    ptr += d_size; // store sizeof(uint32_t) + 7 * d_size +  2 * z_size
+    ptr += lambda_size; // store sizeof(uint32_t) + 6 * d_size +  2 * z_size + lambda_size
 
-    if (!BN_bn2binpad(zkp->lambda2, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->lambda2, ptr, lambda_size) <= 0)
     {
         return NULL;
     }
-    ptr += d_size; // store sizeof(uint32_t) + 8 * d_size +  2 * z_size
+    ptr += lambda_size; // store sizeof(uint32_t) + 6 * d_size +  2 * z_size + 2 * lambda_size
 
-    if (!BN_bn2binpad(zkp->w, ptr, d_size)) 
+    if (BN_bn2binpad(zkp->w, ptr, d_size) <= 0)
     {
         return NULL;
     }
-    ptr += d_size; // store sizeof(uint32_t) + 9 * d_size +  2 * z_size
+    ptr += d_size; // store sizeof(uint32_t) + 7 * d_size +  2 * z_size + 2 * lambda_size
 
     return ptr;
 }
 
-static inline uint32_t paillier_large_factors_quadratic_proof_size_from_dsize(const uint32_t d_size, const uint32_t z_size)
+static inline uint32_t paillier_large_factors_quadratic_proof_size_from_dsize(const uint32_t d_size, const uint32_t n_bitlen)
 {
-    return sizeof(uint32_t) + 9 * d_size + 2 * z_size;
+    const uint32_t z_size = paillier_large_factors_quadratic_z_size_bytes(n_bitlen) ;
+    return sizeof(uint32_t) + 7 * d_size + 2 * z_size + 2 * (3 * ZKPOK_OPTIM_L_SIZE(n_bitlen) + ZKPOK_OPTIM_NU_SIZE(n_bitlen));
 }
 
-static inline uint32_t paillier_large_factors_quadratic_proof_size(const paillier_public_key_t* pub, const uint32_t d_prime_len) 
+static inline uint32_t paillier_large_factors_quadratic_proof_size(const paillier_public_key_t* pub, const uint32_t d_prime_len)
 {
     const uint32_t d_bitsize = d_prime_len ? d_prime_len * 8 : range_proof_paillier_large_factors_quadratic_zkp_compute_d_bitsize(pub);
     const uint32_t d_size = (d_bitsize + 7) / 8; //convert to bytes of d
-    
-    const uint32_t z_size = paillier_large_factors_quadratic_z_size_bytes(paillier_public_key_size(pub)) ;
+    const uint32_t n_bitlen = paillier_public_key_size(pub);
 
-
-    return paillier_large_factors_quadratic_proof_size_from_dsize(d_size, z_size);
+    return paillier_large_factors_quadratic_proof_size_from_dsize(d_size, n_bitlen);
 }
 
 
-static inline const uint8_t* deserialize_paillier_large_factors_quadratic(range_proof_paillier_large_factors_quadratic_zkp_t* zkp, 
-                                                                          const uint8_t* serialized_proof, 
+static inline const uint8_t* deserialize_paillier_large_factors_quadratic(range_proof_paillier_large_factors_quadratic_zkp_t* zkp,
+                                                                          const uint8_t* serialized_proof,
                                                                           const uint32_t n_bitlsize,
-                                                                          uint32_t proof_len, 
-                                                                          BN_CTX* ctx) 
+                                                                          uint32_t proof_len,
+                                                                          BN_CTX* ctx)
 {
     const uint32_t z_size = paillier_large_factors_quadratic_z_size_bytes(n_bitlsize);
+    const uint32_t lambda_size = (3 * ZKPOK_OPTIM_L_SIZE(n_bitlsize)) + ZKPOK_OPTIM_NU_SIZE(n_bitlsize);
     const uint8_t* ptr = serialized_proof;
     uint32_t d_size;
     if (proof_len < sizeof(uint32_t))
@@ -2072,12 +2374,12 @@ static inline const uint8_t* deserialize_paillier_large_factors_quadratic(range_
 
     d_size = *(const uint32_t*)ptr; // read sizeof(uint32_t)
     ptr += sizeof(uint32_t);
-    if (!d_size)
+    if (!d_size || d_size > MAX_D_SIZE)
     {
         return NULL;
     }
 
-    if (proof_len < paillier_large_factors_quadratic_proof_size_from_dsize(d_size, z_size))
+    if (proof_len < paillier_large_factors_quadratic_proof_size_from_dsize(d_size, n_bitlsize))
     {
         return NULL;
     }
@@ -2140,35 +2442,35 @@ static inline const uint8_t* deserialize_paillier_large_factors_quadratic(range_
     }
     ptr += z_size; // read sizeof(uint32_t) + 6 * d_size + 2* z_size
 
-    if (!BN_bin2bn(ptr, d_size, zkp->lambda1))
+    if (!BN_bin2bn(ptr, lambda_size, zkp->lambda1))
     {
         return NULL;
     }
-    ptr += d_size; // read sizeof(uint32_t) + 7 * d_size + 2* z_size
+    ptr += lambda_size; // read sizeof(uint32_t) + 6 * d_size + 2* z_size + lambda_size
 
-    if (!BN_bin2bn(ptr, d_size, zkp->lambda2))
+    if (!BN_bin2bn(ptr, lambda_size, zkp->lambda2))
     {
         return NULL;
     }
-    ptr += d_size;// read sizeof(uint32_t) + 8 * d_size + 2* z_size
+    ptr += lambda_size;// read sizeof(uint32_t) + 6 * d_size + 2* z_size + 2 * lambda_size
 
     if (!BN_bin2bn(ptr, d_size, zkp->w))
     {
         return NULL;
     }
-    ptr += d_size; // read sizeof(uint32_t) + 9 * d_size + 2* z_size
+    ptr += d_size; // read sizeof(uint32_t) + 7 * d_size + 2* z_size + 2 * lambda_size
 
     return ptr;
 }
 
 
-zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_generate(const paillier_private_key_t *priv, 
-                                                                                      const uint8_t *aad, 
-                                                                                      const uint32_t aad_len, 
+zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_generate(const paillier_private_key_t *priv,
+                                                                                      const uint8_t *aad,
+                                                                                      const uint32_t aad_len,
                                                                                       const uint8_t *d_prime,
                                                                                       const uint32_t d_prime_len,
-                                                                                      uint8_t *serialized_proof, 
-                                                                                      uint32_t proof_len, 
+                                                                                      uint8_t *serialized_proof,
+                                                                                      uint32_t proof_len,
                                                                                       uint32_t *real_proof_len)
 {
     BN_CTX *ctx = NULL;
@@ -2184,7 +2486,7 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
     {
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     required_len = paillier_large_factors_quadratic_proof_size(&priv->pub, d_prime_len);
 
     if (real_proof_len)
@@ -2198,7 +2500,7 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
     }
 
     n_bitlsize = paillier_public_key_size(&priv->pub);
-    
+
     if (ZKPOK_OPTIM_L_SIZE(n_bitlsize) > SHA256_DIGEST_LENGTH)
     {
         return ZKP_INVALID_PARAMETER;
@@ -2209,14 +2511,19 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
     {
         return ZKP_OUT_OF_MEMORY;
     }
-        
+
     BN_CTX_start(ctx);
+    ret = range_proof_paillier_large_factors_quadratic_zkp_initialize(&zkp, ctx);
+    if (ZKP_SUCCESS != ret)
+    {
+        goto cleanup;
+    }
 
     g = BN_CTX_get(ctx);
     h = BN_CTX_get(ctx);
     r = BN_CTX_get(ctx);
     s = BN_CTX_get(ctx);
-    
+
     if (!g || !h || !r || !s)
     {
         ret = ZKP_OUT_OF_MEMORY;
@@ -2252,12 +2559,6 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
         }
     }
 
-    ret = range_proof_paillier_large_factors_quadratic_zkp_initialize(&zkp, ctx);
-    if (ZKP_SUCCESS != ret)
-    {
-        goto cleanup;
-    }
-
     ret = range_proof_pailler_quadratic_generate_setup(&zkp.setup, r, s, g, h, d, priv, aad, aad_len, ctx);
     if (ZKP_SUCCESS != ret)
     {
@@ -2270,13 +2571,16 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
     if (!BN_rshift(tmp, priv->pub.n, (n_bitlsize + 1) / 2 - ((ZKPOK_OPTIM_L_SIZE(n_bitlsize) + ZKPOK_OPTIM_NU_SIZE(n_bitlsize)) * 8 )) ||
         !BN_rand_range(alpha, tmp) ||
         !BN_rand_range(beta, tmp)  ||
-        !BN_rand_range(sigma, zkp.setup.d_minus_1_over_2) ||
-        !BN_rand_range(rho, zkp.setup.d_minus_1_over_2)   ||
-        !BN_rand_range(mu, zkp.setup.d_minus_1_over_2)    ||
+        // sigma and rho must be 3l + nu bits
+        !BN_rand(sigma, ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(n_bitlsize) + ZKPOK_OPTIM_L_SIZE(n_bitlsize) * 8, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) ||
+        !BN_rand(rho, ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(n_bitlsize) + ZKPOK_OPTIM_L_SIZE(n_bitlsize) * 8, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY)   ||
+        // we now pick mu to be 3*l + n_bit/2 + nu bits long
+        !BN_lshift(tmp, tmp, (2 * ZKPOK_OPTIM_L_SIZE(n_bitlsize)) * 8) ||
+        !BN_rand_range(mu, tmp)    ||
         !BN_mod_exp2_mont(zkp.A, g, alpha, h, rho, zkp.setup.d, ctx, zkp.setup.d_mont)  ||
         !BN_mod_exp2_mont(zkp.B, g, beta, h, sigma, zkp.setup.d, ctx, zkp.setup.d_mont) ||
         !BN_mod_exp2_mont(zkp.C, zkp.setup.Q, alpha, h, mu, zkp.setup.d, ctx, zkp.setup.d_mont)
-    ) 
+    )
     {
         goto cleanup;
     }
@@ -2287,8 +2591,8 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
         ret = ZKP_UNKNOWN_ERROR;
         goto cleanup;
     }
-    
-    if (!BN_bin2bn(seed, ZKPOK_OPTIM_L_SIZE(n_bitlsize), e)) 
+
+    if (!BN_bin2bn(seed, ZKPOK_OPTIM_L_SIZE(n_bitlsize), e))
     {
         goto cleanup;
     }
@@ -2309,23 +2613,23 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_gen
         !BN_mod_mul(zkp.w, s, priv->p, zkp.setup.d_minus_1_over_2, ctx) ||
         !BN_mod_mul(zkp.w, zkp.w, e, zkp.setup.d_minus_1_over_2, ctx) ||
         !BN_mod_sub_quick(zkp.w, mu, zkp.w, zkp.setup.d_minus_1_over_2)
-    ) 
+    )
     {
         goto cleanup;
     }
 
     end_of_serialized_data = serialize_paillier_large_factors_quadratic(&zkp, n_bitlsize, serialized_proof);
-    
-    if (!end_of_serialized_data) 
+
+    if (!end_of_serialized_data)
     {
         ret = ZKP_UNKNOWN_ERROR;
         goto cleanup;
-    } 
+    }
 
     // clean up all the remaining bytes
     // can happen if initial size of d was incorerct and real d takes less bytes
     OPENSSL_cleanse(end_of_serialized_data, proof_len - (end_of_serialized_data - serialized_proof));
-    
+
     if (real_proof_len)
     {
         *real_proof_len = (end_of_serialized_data - serialized_proof);
@@ -2339,6 +2643,40 @@ cleanup:
         ERR_clear_error();
         ret = ZKP_UNKNOWN_ERROR;
     }
+    if (r)
+    {
+        BN_clear(r);
+    }
+    if (s)
+    {
+        BN_clear(s);
+    }
+
+    if (alpha)
+    {
+        BN_clear(alpha);
+    }
+    if (beta)
+    {
+        BN_clear(beta);
+    }
+    if (sigma)
+    {
+        BN_clear(sigma);
+    }
+    if (rho)
+    {
+        BN_clear(rho);
+    }
+    if (mu)
+    {
+        BN_clear(mu);
+    }
+    if (tmp)
+    {
+        BN_clear(tmp);
+    }
+
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
@@ -2351,8 +2689,8 @@ cleanup:
     return ret;
 }
 
-static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_verify_setup(const paillier_large_factors_quadratic_setup_t* setup, const paillier_public_key_t* pub, BN_CTX* ctx) 
-{    
+static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_verify_setup(const paillier_large_factors_quadratic_setup_t* setup, const paillier_public_key_t* pub, BN_CTX* ctx)
+{
     long ret = -1;
 
     BN_CTX_start(ctx);
@@ -2375,14 +2713,14 @@ static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_
     {
         goto cleanup;
     }
-    
+
     if (BN_cmp(tmp, setup->d) != 0 ||
         BN_is_prime_ex(setup->d, BN_prime_checks, ctx, NULL) != 1 ||
         BN_is_prime_ex(setup->d_minus_1_over_2, BN_prime_checks, ctx, NULL) != 1 ||
         BN_cmp(setup->d, setup->P) <= 0 || // make sure P, Q are smaller than 'd'
         BN_cmp(setup->d, setup->Q) <= 0 ||
         BN_kronecker(setup->P, setup->d, ctx) != 1 || // make sure that P, Q are indeed quadratic residues.
-        BN_kronecker(setup->Q, setup->d, ctx) != 1) 
+        BN_kronecker(setup->Q, setup->d, ctx) != 1)
     {
         ret = ZKP_VERIFICATION_FAILED;
         goto cleanup;
@@ -2396,19 +2734,19 @@ cleanup:
         ERR_clear_error();
         ret = ZKP_UNKNOWN_ERROR;
     }
-    
+
     BN_CTX_end(ctx);
 
     return ret;
 }
 
-static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_verify_internal(const paillier_public_key_t *pub, 
-                                                                                                    const uint8_t *aad, 
-                                                                                                    const uint32_t aad_len, 
+static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_verify_internal(const paillier_public_key_t *pub,
+                                                                                                    const uint8_t *aad,
+                                                                                                    const uint32_t aad_len,
                                                                                                     const range_proof_paillier_large_factors_quadratic_zkp_t* zkp,
-                                                                                                    const BIGNUM* g, 
-                                                                                                    const BIGNUM* h, 
-                                                                                                    BN_CTX* ctx) 
+                                                                                                    const BIGNUM* g,
+                                                                                                    const BIGNUM* h,
+                                                                                                    BN_CTX* ctx)
 {
     long ret = -1;
     uint8_t seed[SHA256_DIGEST_LENGTH];
@@ -2439,7 +2777,7 @@ static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_
     {
         goto cleanup;
     }
-    
+
     //reset ret to handle OpenSSL errors
     ret = -1;
 
@@ -2447,15 +2785,15 @@ static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_
     {
         goto cleanup;
     }
-        
 
-    if (BN_cmp(zkp->z1, upper_limit) >= 0 || 
+
+    if (BN_cmp(zkp->z1, upper_limit) >= 0 ||
         BN_cmp(zkp->z2, upper_limit) >= 0 )
     {
         ret = ZKP_VERIFICATION_FAILED;
         goto cleanup;
     }
-        
+
     if (!generate_paillier_large_factors_quadratic_zkp_seed(zkp, pub, aad, aad_len, seed))
     {
         ret = ZKP_UNKNOWN_ERROR;
@@ -2491,7 +2829,7 @@ static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_
         ret = ZKP_VERIFICATION_FAILED;
         goto cleanup;
     }
-        
+
 
     if (!BN_mul(e, e, pub->n, ctx) ||
         !BN_mod_exp2_mont(lhs, zkp->setup.Q, zkp->z1, h, zkp->w, zkp->setup.d, ctx, zkp->setup.d_mont) ||
@@ -2499,13 +2837,13 @@ static zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_
     {
         goto cleanup;
     }
-    
+
     if (BN_cmp(lhs, rhs) != 0)
     {
         ret = ZKP_VERIFICATION_FAILED;
         goto cleanup;
     }
-        
+
     ret = ZKP_SUCCESS;
 
 cleanup:
@@ -2520,11 +2858,11 @@ cleanup:
     return ret;
 }
 
-zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_verify(const paillier_public_key_t *pub, 
-                                                                                    const uint8_t *aad, 
-                                                                                    const uint32_t aad_len, 
-                                                                                    const uint8_t *serialized_proof, 
-                                                                                    const uint32_t proof_len) 
+zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_verify(const paillier_public_key_t *pub,
+                                                                                    const uint8_t *aad,
+                                                                                    const uint32_t aad_len,
+                                                                                    const uint8_t *serialized_proof,
+                                                                                    const uint32_t proof_len)
 {
     BN_CTX *ctx = NULL;
     BIGNUM *g = NULL, *h = NULL;
@@ -2535,35 +2873,35 @@ zero_knowledge_proof_status range_proof_paillier_large_factors_quadratic_zkp_ver
     {
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     // at least the size of a uint32_t
     if (proof_len < sizeof(uint32_t))
     {
         return ZKP_INSUFFICIENT_BUFFER;
     }
-        
+
     ctx = BN_CTX_new();
     if (!ctx)
     {
         return ZKP_OUT_OF_MEMORY;
     }
-        
-    BN_CTX_start(ctx);
 
-    g = BN_CTX_get(ctx);
-    h = BN_CTX_get(ctx);
-    if (!h || !h)
-    {
-        ret = ZKP_OUT_OF_MEMORY;
-        goto cleanup;
-    }
+    BN_CTX_start(ctx);
     ret = range_proof_paillier_large_factors_quadratic_zkp_initialize(&zkp, ctx);
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-    
-    if (!deserialize_paillier_large_factors_quadratic(&zkp, serialized_proof,  paillier_public_key_size(pub), proof_len, ctx)) 
+
+    g = BN_CTX_get(ctx);
+    h = BN_CTX_get(ctx);
+    if (!g || !h)
+    {
+        ret = ZKP_OUT_OF_MEMORY;
+        goto cleanup;
+    }
+
+    if (!deserialize_paillier_large_factors_quadratic(&zkp, serialized_proof,  paillier_public_key_size(pub), proof_len, ctx))
     {
         ret = ZKP_UNKNOWN_ERROR;
         goto cleanup;
@@ -2585,7 +2923,7 @@ cleanup:
     {
         BN_MONT_CTX_free(zkp.setup.d_mont);
     }
-        
+
     return ret;
 }
 
@@ -2594,15 +2932,16 @@ cleanup:
 // paillier small group with encrypted dlog
 // the serialize_proof should point to a buffer of size at least
 // exponent_zkpok_serialized_size_internal(damgard_fujisaki->n, paillier->paillier_public.n)
-static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_exponent_zkpok_generate(const damgard_fujisaki_public_t *damgard_fujisaki, 
-                                                                                                   const paillier_commitment_private_key_t *paillier, 
+static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_exponent_zkpok_generate(const damgard_fujisaki_public_t *damgard_fujisaki,
+                                                                                                   const paillier_commitment_private_key_t *paillier,
                                                                                                    const elliptic_curve256_algebra_ctx_t *algebra,
-                                                                                                   const uint8_t *aad, 
-                                                                                                   const uint32_t aad_len, 
-                                                                                                   const uint8_t* secret, 
-                                                                                                   const uint32_t secret_len, 
+                                                                                                   const uint8_t *aad,
+                                                                                                   const uint32_t aad_len,
+                                                                                                   const uint8_t* secret,
+                                                                                                   const uint32_t secret_len,
                                                                                                    const BIGNUM *ciphertext,
                                                                                                    const BIGNUM *r,
+                                                                                                   const uint8_t use_extended_seed,
                                                                                                    uint8_t *serialized_proof)
 {
     BN_CTX *ctx = NULL;
@@ -2619,13 +2958,13 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
     {
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     // because we require two proofs
     if (damgard_fujisaki->dimension < 2)
     {
         return ZKP_INVALID_PARAMETER;
     }
-    
+
     ctx = BN_CTX_new();
     if (!ctx)
     {
@@ -2644,23 +2983,23 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
     {
         goto cleanup;
     }
-        
+
     // all members of zkpok are allocated from the ctx
     ret = init_exponent_zkpok(&zkpok, ctx);
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-        
+
     ret = -1; //reset for OpenSSL errors
-    
+
     if (!BN_bin2bn(secret, secret_len, x))
     {
         goto cleanup;
     }
-        
+
     q = algebra->order_internal(algebra);
-    
+
     paillier_n_bitsize = (uint32_t)paillier_commitment_public_bitsize(&paillier->pub);
 
     // generate S, D, Y, T
@@ -2674,7 +3013,7 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
     {
         goto cleanup;
     }
-    
+
     // rand mu
     if (!BN_copy(tmp, damgard_fujisaki->n) || !BN_lshift(tmp, tmp, ZKPOK_OPTIM_NU_SIZE(paillier_n_bitsize) * 8)) //tmp = n * 2^(ZKPOK_OPTIM_NU_SIZE*8)
     {
@@ -2685,7 +3024,7 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
     {
         goto cleanup;
     }
-        
+
 
     // rand mu_p
     if (!BN_lshift(tmp, tmp, ZKPOK_OPTIM_EPSILON_SIZE(paillier_n_bitsize) * 8))// tmp = n * 2^(ZKPOK_OPTIM_NU_SIZE*8 + ZKPOK_OPTIM_EPSILON_SIZE * 8)
@@ -2693,75 +3032,82 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
         goto cleanup;
     }
 
-    if (!BN_rand_range(mu_p, tmp)) 
+    if (!BN_rand_range(mu_p, tmp))
     {
         goto cleanup;
     }
-    
-    // the r_power_bitsize is called n(lamda prime) in the paper and it used for encryption of alpha 
-    // which is bigger than private share, thus we use larger exponent as in range_proof_paillier_commitment_exponent_zkpok_generate
-    ret = convert_paillier_to_zkp_status(paillier_commitment_encrypt_openssl_with_private_internal(paillier,  
-                                                                                                   ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(paillier_n_bitsize) + ZKPOK_OPTIM_EPSILON_SIZE(paillier_n_bitsize) * 8, 
-                                                                                                   alpha, 
+
+    // the r_power_bitsize is called n(lambda prime) in the paper and it used for encryption of alpha
+    // which is bigger than private share, thus we use larger exponent as in paillier_commitment_encrypt_with_exponent_zkpok_generate
+    ret = convert_paillier_to_zkp_status(paillier_commitment_encrypt_openssl_with_private_internal(paillier,
+                                                                                                   ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(paillier_n_bitsize) + ZKPOK_OPTIM_EPSILON_SIZE(paillier_n_bitsize) * 8,
+                                                                                                   alpha,
                                                                                                    ctx,
-                                                                                                   zkpok.D,  
+                                                                                                   zkpok.D,
                                                                                                    lambda_p));
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-    
+
     const BIGNUM* first_ped_committed_values[] = {x, r};
-    ret = convert_ring_pedersen_to_zkp_status(damgard_fujisaki_create_commitment_internal(damgard_fujisaki, 
-                                                                                         first_ped_committed_values, 
+    ret = convert_ring_pedersen_to_zkp_status(damgard_fujisaki_create_commitment_internal(damgard_fujisaki,
+                                                                                         first_ped_committed_values,
                                                                                          2,
-                                                                                         mu, 
-                                                                                         zkpok.S, 
+                                                                                         mu,
+                                                                                         zkpok.S,
                                                                                          ctx));
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-        
+
     const BIGNUM* second_ped_committed_values[] = {alpha, lambda_p};
-    ret = convert_ring_pedersen_to_zkp_status(damgard_fujisaki_create_commitment_internal(damgard_fujisaki, 
-                                                                                         second_ped_committed_values, 
+    ret = convert_ring_pedersen_to_zkp_status(damgard_fujisaki_create_commitment_internal(damgard_fujisaki,
+                                                                                         second_ped_committed_values,
                                                                                          2,
-                                                                                         mu_p, 
-                                                                                         zkpok.T, 
+                                                                                         mu_p,
+                                                                                         zkpok.T,
                                                                                          ctx));
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-        
+
     if (!BN_mod(tmp, alpha, q, ctx))
     {
         ret = -1; // OpenSSL error
         goto cleanup;
     }
-        
-    BN_bn2binpad(tmp, alpha_bin, sizeof(elliptic_curve256_scalar_t));
-    
+
+    if (BN_bn2binpad(tmp, alpha_bin, sizeof(elliptic_curve256_scalar_t)) <= 0)
+    {
+        ret = -1;
+        goto cleanup;
+    }
+
     ret = convert_algebra_to_zkp_status(algebra->generator_mul(algebra, &zkpok.Y, &alpha_bin));
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
-    
+
     ret = convert_algebra_to_zkp_status(algebra->generator_mul_data(algebra, secret, secret_len, &public_point));
     if (ret != ZKP_SUCCESS)
     {
         goto cleanup;
     }
 
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(damgard_fujisaki->n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier->pub.n);
+
     // sample e
-    if (!genarate_exponent_zkpok_seed(&zkpok, ciphertext, &public_point, aad, aad_len, seed))
+    if (!genarate_exponent_zkpok_seed(paillier_n_size, ring_pedersen_n_size, &zkpok, ciphertext, &public_point, aad, aad_len, use_extended_seed, seed))
     {
         ret = ZKP_UNKNOWN_ERROR;
         goto cleanup;
     }
-        
+
     ret = convert_drng_to_zkp_status(drng_new(seed, SHA256_DIGEST_LENGTH, &rng));
     if (ret != ZKP_SUCCESS)
     {
@@ -2781,7 +3127,7 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
         {
             goto cleanup;
         }
-            
+
     } while (BN_cmp(e, q) >= 0);
 
     // calc z1, z2, z3
@@ -2789,37 +3135,35 @@ static zero_knowledge_proof_status range_proof_paillier_commitment_encrypt_expon
     {
         goto cleanup;
     }
-        
+
     if (!BN_add(zkpok.z1, zkpok.z1, alpha))
     {
         goto cleanup;
     }
-        
+
 
     if (!BN_mul(zkpok.z2, r, e, ctx))
     {
         goto cleanup;
     }
-        
+
     if (!BN_add(zkpok.z2, zkpok.z2, lambda_p))
     {
         goto cleanup;
     }
-        
+
 
     if (!BN_mul(zkpok.z3, e, mu, ctx))
     {
         goto cleanup;
     }
-        
+
     if (!BN_add(zkpok.z3, zkpok.z3, mu_p))
     {
         goto cleanup;
     }
-        
-    serialize_exponent_zkpok(&zkpok, damgard_fujisaki->n, paillier->pub.n, serialized_proof);
 
-    ret = ZKP_SUCCESS;
+    ret = serialize_exponent_zkpok(&zkpok, damgard_fujisaki->n, paillier->pub.n, serialized_proof) != NULL ? ZKP_SUCCESS : ZKP_OUT_OF_MEMORY;
 
 cleanup:
     if (-1 == ret)
@@ -2835,7 +3179,7 @@ cleanup:
         BN_clear(alpha);
         BN_clear(lambda_p);
     }
-        
+
     drng_free(rng);
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
@@ -2843,14 +3187,15 @@ cleanup:
 }
 
 
-zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_generate(const damgard_fujisaki_public_t *damgard_fujisaki, 
-                                                                                    const paillier_commitment_private_key_t *paillier, 
-                                                                                    const elliptic_curve256_algebra_ctx_t *algebra,
-                                                                                    const uint8_t *aad, 
-                                                                                    const uint32_t aad_len, 
-                                                                                    const uint8_t* secret, 
-                                                                                    const uint32_t secret_len, 
-                                                                                    paillier_with_range_proof_t **proof)
+zero_knowledge_proof_status paillier_commitment_encrypt_with_exponent_zkpok_generate(const damgard_fujisaki_public_t *damgard_fujisaki,
+                                                                                     const paillier_commitment_private_key_t *paillier,
+                                                                                     const elliptic_curve256_algebra_ctx_t *algebra,
+                                                                                     const uint8_t *aad,
+                                                                                     const uint32_t aad_len,
+                                                                                     const uint8_t* secret,
+                                                                                     const uint32_t secret_len,
+                                                                                     const uint8_t use_extended_seed,
+                                                                                     paillier_with_range_proof_t **proof)
 {
     BIGNUM *ciphertext = NULL, *randomizer_power = NULL, *msg = NULL;
     BN_CTX * ctx = NULL;
@@ -2861,7 +3206,7 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_gener
     {
         return ZKP_INVALID_PARAMETER;
     }
-        
+
     if (damgard_fujisaki->dimension < 2)
     {
         return ZKP_INVALID_PARAMETER;
@@ -2877,7 +3222,7 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_gener
     ciphertext = BN_CTX_get(ctx);
     randomizer_power = BN_CTX_get(ctx);
     msg = BN_CTX_get(ctx);
-    if (!ciphertext || !randomizer_power)
+    if (!ciphertext || !randomizer_power || !msg)
     {
         ret = ZKP_OUT_OF_MEMORY;
         goto cleanup;
@@ -2897,9 +3242,9 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_gener
 
     paillier_n_bitsize = paillier_commitment_public_bitsize(&paillier->pub);
 
-    // the r_power_bitsize is called n(lamda) in the paper and it used for encrypt of private share here
-    ret = convert_paillier_to_zkp_status(paillier_commitment_encrypt_openssl_with_private_internal(paillier, 
-                                                                                                   ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(paillier_n_bitsize), 
+    // the r_power_bitsize is called n(lambda) in the paper and it used for encrypt of private share here
+    ret = convert_paillier_to_zkp_status(paillier_commitment_encrypt_openssl_with_private_internal(paillier,
+                                                                                                   ZKPOK_OPTIM_SMALL_GROUP_EXPONENT_BITS(paillier_n_bitsize),
                                                                                                    msg,
                                                                                                    ctx,
                                                                                                    ciphertext,
@@ -2916,7 +3261,7 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_gener
         ret = ZKP_OUT_OF_MEMORY;
         goto cleanup;
     }
-        
+
 
     local_proof->ciphertext_len = BN_num_bytes(ciphertext);
     local_proof->ciphertext = (uint8_t*)calloc(1, local_proof->ciphertext_len);
@@ -2931,21 +3276,27 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_gener
 
     BN_bn2bin(ciphertext, local_proof->ciphertext);
 
-    ret = range_proof_paillier_commitment_encrypt_exponent_zkpok_generate(damgard_fujisaki, 
-                                                                          paillier, 
-                                                                          algebra, 
-                                                                          aad, 
-                                                                          aad_len, 
-                                                                          secret, 
-                                                                          secret_len, 
-                                                                          ciphertext, 
+    ret = range_proof_paillier_commitment_encrypt_exponent_zkpok_generate(damgard_fujisaki,
+                                                                          paillier,
+                                                                          algebra,
+                                                                          aad,
+                                                                          aad_len,
+                                                                          secret,
+                                                                          secret_len,
+                                                                          ciphertext,
                                                                           randomizer_power,
+                                                                          use_extended_seed,
                                                                           local_proof->serialized_proof);
 
 cleanup:
     if (randomizer_power)
     {
         BN_clear(randomizer_power);
+    }
+
+    if (msg)
+    {
+        BN_clear(msg);
     }
 
     BN_CTX_end(ctx);
@@ -2963,13 +3314,14 @@ cleanup:
     return ret;
 }
 
-zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verify(const damgard_fujisaki_private_t* damgard_fujisaki, 
-                                                                                  const paillier_commitment_public_key_t* paillier, 
-                                                                                  const elliptic_curve256_algebra_ctx_t* algebra,
-                                                                                  const uint8_t* aad, 
-                                                                                  const uint32_t aad_len, 
-                                                                                  const elliptic_curve256_point_t* public_point, 
-                                                                                  const const_paillier_with_range_proof_t* proof) 
+zero_knowledge_proof_status paillier_commitment_exponent_zkpok_verify(const damgard_fujisaki_private_t* damgard_fujisaki,
+                                                                      const paillier_commitment_public_key_t* paillier,
+                                                                      const elliptic_curve256_algebra_ctx_t* algebra,
+                                                                      const uint8_t* aad,
+                                                                      const uint32_t aad_len,
+                                                                      const elliptic_curve256_point_t* public_point,
+                                                                      const const_paillier_with_range_proof_t* proof,
+                                                                      const uint8_t use_extended_seed)
 {
     BN_CTX *ctx = NULL;
     drng_t *rng = NULL;
@@ -2985,21 +3337,21 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     elliptic_curve256_point_t p2;
     uint32_t paillier_n_bitsize;
 
-    if (!damgard_fujisaki || 
-        !paillier || 
-        !algebra || 
-        !aad || 
-        !aad_len || 
-        !public_point || 
-        !proof || 
-        !proof->ciphertext || 
-        !proof->ciphertext_len || 
-        !proof->serialized_proof || 
+    if (!damgard_fujisaki ||
+        !paillier ||
+        !algebra ||
+        !aad ||
+        !aad_len ||
+        !public_point ||
+        !proof ||
+        !proof->ciphertext ||
+        !proof->ciphertext_len ||
+        !proof->serialized_proof ||
         !proof->proof_len)
     {
         return ZKP_INVALID_PARAMETER;
     }
-        
+
     paillier_n_bitsize = paillier_commitment_public_bitsize(paillier);
     needed_proof_len = exponent_zkpok_serialized_size_internal(damgard_fujisaki->pub.n, paillier->n);
     if (proof->proof_len < needed_proof_len)
@@ -3032,7 +3384,7 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     }
 
     ret = ZKP_VERIFICATION_FAILED;
-    
+
     if (!deserialize_exponent_zkpok(&zkpok, damgard_fujisaki->pub.n, paillier->n, proof->serialized_proof))
     {
         goto cleanup;
@@ -3054,8 +3406,22 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
         goto cleanup;
     }
 
+    // \tilde(P) in the paper
+    if (is_coprime_fast(zkpok.S, damgard_fujisaki->pub.n, ctx) != 1)
+    {
+        goto cleanup;
+    }
+    // \tilde(B) in the paper
+    if (is_coprime_fast(zkpok.T, damgard_fujisaki->pub.n, ctx) != 1)
+    {
+        goto cleanup;
+    }
+
+    const uint32_t ring_pedersen_n_size = (uint32_t)BN_num_bytes(damgard_fujisaki->pub.n);
+    const uint32_t paillier_n_size = (uint32_t)BN_num_bytes(paillier->n);
+
     // sample e
-    if (!genarate_exponent_zkpok_seed(&zkpok, tmp1, public_point, aad, aad_len, seed))
+    if (!genarate_exponent_zkpok_seed(paillier_n_size, ring_pedersen_n_size, &zkpok, tmp1, public_point, aad, aad_len, use_extended_seed, seed))
     {
         ret = ZKP_OUT_OF_MEMORY;
         goto cleanup;
@@ -3095,7 +3461,7 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     {
         goto cleanup;
     }
-            
+
     do
     {
 
@@ -3125,13 +3491,13 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     {
         goto cleanup;
     }
-        
+
 
     if (!BN_mod_mul(tmp1, tmp1, zkpok.D, paillier->n2, ctx))
     {
         goto cleanup;
     }
-        
+
 
     if (BN_cmp(tmp1, tmp2) != 0)
     {
@@ -3143,13 +3509,13 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     {
         goto cleanup;
     }
-        
+
 
     if (!BN_mod_mul(tmp1, tmp1, zkpok.T, damgard_fujisaki->pub.n, ctx))
     {
         goto cleanup;
     }
-        
+
 
     const BIGNUM* verification_pedersen_commitments[] = {zkpok.z1, zkpok.z2};
     ret = damgard_fujisaki_verify_commitment_internal(damgard_fujisaki, verification_pedersen_commitments, 2, zkpok.z3, tmp1, ctx);
@@ -3157,15 +3523,19 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     {
         goto cleanup;
     }
-    
+
     //prepare z1 point
     if (!BN_mod(zkpok.z1, zkpok.z1, q, ctx))
     {
         ret = -1;
         goto cleanup;
     }
-        
-    BN_bn2binpad(zkpok.z1, z1, sizeof(elliptic_curve256_scalar_t));
+
+    if (BN_bn2binpad(zkpok.z1, z1, sizeof(elliptic_curve256_scalar_t)) <= 0)
+    {
+        ret = -1;
+        goto cleanup;
+    }
 
     ret = ZKP_VERIFICATION_FAILED;
 
@@ -3173,24 +3543,24 @@ zero_knowledge_proof_status range_proof_paillier_commitment_exponent_zkpok_verif
     {
         goto cleanup;
     }
-        
+
     if (algebra->add_points(algebra, &p1, &p1, &zkpok.Y) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
     {
         goto cleanup;
     }
-        
+
     if (algebra->generator_mul(algebra, &p2, &z1) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
     {
         goto cleanup;
     }
 
-    if (0 == memcmp(p1, p2, sizeof(elliptic_curve256_point_t))) 
+    if (0 == memcmp(p1, p2, sizeof(elliptic_curve256_point_t)))
     {
         ret = ZKP_SUCCESS;
     }
 
 cleanup:
-    
+
     if (-1 == ret)
     {
         ERR_clear_error();

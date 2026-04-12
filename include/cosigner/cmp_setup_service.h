@@ -53,6 +53,7 @@ struct setup_data
     commitments_sha256_t seed;
     elliptic_curve_point public_key;
     std::map<uint64_t, elliptic_curve_point> players_schnorr_R;
+    uint32_t version;   // only in devices MPC version >= MPC_EXTENDED_MTA
 };
 
 // this class implements MPC CMP key generation based on https://eprint.iacr.org/2020/492 paper
@@ -69,7 +70,7 @@ public:
         virtual void store_key_metadata(const std::string& key_id, const cmp_key_metadata& metadata, bool allow_override) = 0;
         virtual void store_auxiliary_keys(const std::string& key_id, const auxiliary_keys& aux) = 0;
         virtual void store_keyid_tenant_id(const std::string& key_id, const std::string& tenant_id) = 0;
-        virtual void store_setup_data(const std::string& key_id, const setup_data& metadata) = 0;
+        virtual void store_setup_data(const std::string& key_id, const setup_data& metadata, bool override) = 0;
         virtual void load_setup_data(const std::string& key_id, setup_data& metadata) = 0;
         virtual void store_setup_commitments(const std::string& key_id, const std::map<uint64_t, commitment>& commitments) = 0;
         virtual void load_setup_commitments(const std::string& key_id, std::map<uint64_t, commitment>& commitments) = 0;
@@ -78,7 +79,7 @@ public:
 
     cmp_setup_service(platform_service& service, setup_key_persistency& key_persistency) : _service(service), _key_persistency(key_persistency) {}
     void generate_setup_commitments(const std::string& key_id, const std::string& tenant_id, cosigner_sign_algorithm algorithm, const std::vector<uint64_t>& players_ids, uint8_t t, uint64_t ttl, const share_derivation_args& derive_from, commitment& setup_commitment);
-    void store_setup_commitments(const std::string& key_id, const std::map<uint64_t, commitment>& commitments, setup_decommitment& decommitment);
+    void store_setup_commitments(const std::string& key_id, const std::map<uint64_t, commitment>& commitments, const uint32_t version, setup_decommitment& decommitment);
     void generate_setup_proofs(const std::string& key_id, const std::map<uint64_t, setup_decommitment>& decommitments, setup_zk_proofs& proofs);
     void verify_setup_proofs(const std::string& key_id, const std::map<uint64_t, setup_zk_proofs>& proofs, std::map<uint64_t, byte_vector_t>& paillier_large_factor_proofs);
     void create_secret(const std::string& key_id, const std::map<uint64_t, std::map<uint64_t, byte_vector_t>>& paillier_large_factor_proofs, std::string& public_key, cosigner_sign_algorithm& algorithm);
@@ -101,7 +102,7 @@ private:
     void ack_message(const std::map<uint64_t, commitment>& commitments, commitments_sha256_t* ack);
     void verify_and_load_setup_decommitments(const std::string& key_id, const std::map<uint64_t, commitment>& commitments, const std::map<uint64_t, setup_decommitment>& decommitments, std::map<uint64_t, cmp_player_info>& players_info);
     void generate_setup_proofs(const std::string& key_id, const elliptic_curve256_algebra_ctx_t* algebra, const setup_data& metadata, const commitments_sha256_t srid, setup_zk_proofs& proofs);
-    void verify_setup_proofs(const std::string& key_id, const cmp_key_metadata& metadata, const std::map<uint64_t, setup_zk_proofs>& proofs);
+    void verify_setup_proofs(const std::string& key_id, const cmp_key_metadata& metadata, const std::map<uint64_t, setup_zk_proofs>& proofs, const setup_data& temp_data);
 
     static std::vector<uint8_t> build_aad(const std::string& sid, uint64_t id, const commitments_sha256_t srid);
     static inline elliptic_curve256_algebra_ctx_t* get_algebra(cosigner_sign_algorithm algorithm);

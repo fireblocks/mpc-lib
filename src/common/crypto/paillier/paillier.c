@@ -1,7 +1,7 @@
 #include "paillier_internal.h"
 #include "crypto/zero_knowledge_proof/range_proofs.h"
-#include "../algebra_utils/status_convert.h"
-#include "../algebra_utils/algebra_utils.h"
+#include "crypto/algebra_utils/status_convert.h"
+#include "crypto/algebra_utils/algebra_utils.h"
 #include "../zero_knowledge_proof/zkp_constants_internal.h"
 
 #include <string.h>
@@ -38,7 +38,7 @@ uint64_t paillier_L(BIGNUM *res, const BIGNUM *x, const BIGNUM *n, BN_CTX *ctx)
 cleanup:
     if (ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     BN_clear_free(x_copy);
@@ -50,7 +50,7 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
     long ret = -1;
     BIGNUM *p = NULL, *q = NULL;
     BIGNUM *tmp = NULL, *n = NULL, *n2 = NULL;
-    BIGNUM *lamda = NULL,  *mu = NULL;
+    BIGNUM *lambda = NULL,  *mu = NULL;
     BIGNUM *three = NULL, *seven = NULL, *eight = NULL;
     BN_CTX *ctx = NULL;
     
@@ -66,7 +66,7 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
     ctx = BN_CTX_secure_new();
     if (!ctx)
     {
-        //not jumping to cleanup to avoid initializating all local variables
+        //not jumping to cleanup to avoid initializing all local variables
         return PAILLIER_ERROR_OUT_OF_MEMORY; 
     }
 
@@ -81,10 +81,10 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
     q = BN_new();
     n = BN_new();
     n2 = BN_new();
-    lamda = BN_new();
+    lambda = BN_new();
     mu = BN_new();
     
-    if (!p || !q || !tmp || !n || !n2 || !lamda || !mu || !three || !seven || !eight)
+    if (!p || !q || !tmp || !n || !n2 || !lambda || !mu || !three || !seven || !eight)
     {
         goto cleanup;
     }
@@ -93,7 +93,7 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
     BN_set_flags(n2, BN_FLG_CONSTTIME);
     BN_set_flags(p, BN_FLG_CONSTTIME);
     BN_set_flags(q, BN_FLG_CONSTTIME);
-    BN_set_flags(lamda, BN_FLG_CONSTTIME);
+    BN_set_flags(lambda, BN_FLG_CONSTTIME);
     BN_set_flags(mu, BN_FLG_CONSTTIME);
 
     if (!BN_set_word(three, 3))
@@ -140,22 +140,22 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
             goto cleanup;
         }
 
-        if (!BN_sub(lamda, n, p))
+        if (!BN_sub(lambda, n, p))
         {
             goto cleanup;
         }
 
-        if (!BN_sub(lamda, lamda, q))
+        if (!BN_sub(lambda, lambda, q))
         {
             goto cleanup;
         }
 
-        if (!BN_add_word(lamda, 1))
+        if (!BN_add_word(lambda, 1))
         {
             goto cleanup;
         }
     } while (BN_cmp(p, q) == 0 || 
-             !BN_gcd(tmp, lamda, n, ctx) || 
+             !BN_gcd(tmp, lambda, n, ctx) || 
              !BN_is_one(tmp));
 
     if (!BN_sqr(n2, n, ctx))
@@ -164,7 +164,7 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
     }
 
     // if num_bits(q) == num_bits(p), we can optimize g lambda and mu selection see https://en.wikipedia.org/wiki/Paillier_cryptosystem
-    if (!BN_mod_inverse(mu, lamda, n, ctx))
+    if (!BN_mod_inverse(mu, lambda, n, ctx))
     {
         goto cleanup;
     }
@@ -173,7 +173,7 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
     priv->pub.n2 = n2;
     priv->p = p;
     priv->q = q;
-    priv->lamda = lamda;
+    priv->lambda = lambda;
     priv->mu = mu;
 
     ret = PAILLIER_SUCCESS;
@@ -181,7 +181,7 @@ static long paillier_generate_private(uint32_t key_len, paillier_private_key_t *
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -193,12 +193,12 @@ cleanup:
     if (ret)
     {
         // handle errors
-        BN_free(p);
-        BN_free(q);
+        BN_clear_free(p);
+        BN_clear_free(q);
         BN_free(n);
         BN_free(n2);
-        BN_free(lamda);
-        BN_free(mu);
+        BN_clear_free(lambda);
+        BN_clear_free(mu);
     }
 
     return ret;
@@ -286,7 +286,7 @@ long paillier_public_key_n(const paillier_public_key_t *pub, uint8_t *n, uint32_
         return PAILLIER_ERROR_KEYLEN_TOO_SHORT;
     }
 
-    return BN_bn2bin(pub->n, n) > 0 ? PAILLIER_SUCCESS : ERR_get_error() * -1;
+    return BN_bn2bin(pub->n, n) > 0 ? PAILLIER_SUCCESS : paillier_error_from_openssl();
 }
 
 uint32_t paillier_public_key_size(const paillier_public_key_t *pub)
@@ -325,7 +325,10 @@ uint8_t *paillier_public_key_serialize(const paillier_public_key_t *pub, uint8_t
 
     memcpy(p, &n_len, sizeof(uint32_t));
     p += sizeof(uint32_t);
-    BN_bn2bin(pub->n, p);
+    if (BN_bn2binpad(pub->n, p, n_len) <= 0)
+    {
+        return NULL;
+    }
     return buffer;
 }
 
@@ -334,7 +337,9 @@ static inline void paillier_free_public_key_cleanup(paillier_public_key_t *pub)
     if (pub)
     {
         BN_free(pub->n);
+        pub->n = NULL;
         BN_free(pub->n2);
+        pub->n2 = NULL;
     }
 }
 
@@ -399,8 +404,6 @@ paillier_public_key_t *paillier_public_key_deserialize(const uint8_t *buffer, ui
     buffer_len -= sizeof(uint32_t);
     buffer += sizeof(uint32_t);
 
-    assert(len == buffer_len);
-
     if (len > buffer_len)
     {
         goto cleanup;
@@ -410,6 +413,8 @@ paillier_public_key_t *paillier_public_key_deserialize(const uint8_t *buffer, ui
     {
         goto cleanup;
     }
+
+    assert(len == buffer_len); // catch possible bugs in debug mode.
     
     BN_CTX_free(ctx);
     return pub;
@@ -453,7 +458,7 @@ long paillier_private_key_n(const paillier_private_key_t *priv, uint8_t *n, uint
         return PAILLIER_ERROR_KEYLEN_TOO_SHORT;
     }
 
-    return BN_bn2bin(priv->pub.n, n) > 0 ? PAILLIER_SUCCESS : ERR_get_error() * -1;
+    return BN_bn2binpad(priv->pub.n, n, len) > 0 ? PAILLIER_SUCCESS : paillier_error_from_openssl();
 }
 
 const paillier_public_key_t* paillier_private_key_get_public(const paillier_private_key_t *priv)
@@ -511,10 +516,10 @@ static paillier_private_key_t* paillier_private_key_deserialize_internal(const u
     priv->q = BN_bin2bn(buffer, p_len, NULL);
     priv->pub.n = BN_new();
     priv->pub.n2 = BN_new();
-    priv->lamda = BN_new();
+    priv->lambda = BN_new();
     priv->mu = BN_new();
     
-    if (!priv->p || !priv->q || !priv->lamda || !priv->mu || !priv->pub.n || !priv->pub.n2)
+    if (!priv->p || !priv->q || !priv->lambda || !priv->mu || !priv->pub.n || !priv->pub.n2)
     {
         goto cleanup;
     }
@@ -523,7 +528,7 @@ static paillier_private_key_t* paillier_private_key_deserialize_internal(const u
     BN_set_flags(priv->q, BN_FLG_CONSTTIME);
     BN_set_flags(priv->pub.n, BN_FLG_CONSTTIME);
     BN_set_flags(priv->pub.n2, BN_FLG_CONSTTIME);
-    BN_set_flags(priv->lamda, BN_FLG_CONSTTIME);
+    BN_set_flags(priv->lambda, BN_FLG_CONSTTIME);
     BN_set_flags(priv->mu, BN_FLG_CONSTTIME);
 
     if (!BN_mul(priv->pub.n, priv->p, priv->q, ctx))
@@ -536,22 +541,22 @@ static paillier_private_key_t* paillier_private_key_deserialize_internal(const u
         goto cleanup;
     }
 
-    if (!BN_sub(priv->lamda, priv->pub.n, priv->p))
+    if (!BN_sub(priv->lambda, priv->pub.n, priv->p))
     {
         goto cleanup;
     }
 
-    if (!BN_sub(priv->lamda, priv->lamda, priv->q))
+    if (!BN_sub(priv->lambda, priv->lambda, priv->q))
     {
         goto cleanup;
     }
 
-    if (!BN_add_word(priv->lamda, 1))
+    if (!BN_add_word(priv->lambda, 1))
     {
         goto cleanup;
     }
 
-    if (!BN_mod_inverse(priv->mu, priv->lamda, priv->pub.n, ctx))
+    if (!BN_mod_inverse(priv->mu, priv->lambda, priv->pub.n, ctx))
     {
         goto cleanup;
     }
@@ -589,8 +594,7 @@ paillier_private_key_t* paillier_private_key_deserialize(const uint8_t* buffer, 
     buffer += sizeof(uint32_t);
     buffer_len -= sizeof(uint32_t);
 
-    assert(2 * len  == buffer_len);
-    if (2 * len  > buffer_len)
+    if (len > 65535 || 2 * len  > buffer_len)
     {
         return NULL;
     }
@@ -621,7 +625,7 @@ static inline void paillier_free_private_key_cleanup(paillier_private_key_t *pri
         paillier_free_public_key_cleanup(&priv->pub);
         BN_clear_free(priv->p);
         BN_clear_free(priv->q);
-        BN_clear_free(priv->lamda);
+        BN_clear_free(priv->lambda);
         BN_clear_free(priv->mu);
     }
 }
@@ -676,9 +680,19 @@ long paillier_encrypt_openssl_internal(const paillier_public_key_t *key, BIGNUM 
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
-
+    // Clear sensitive intermediates unconditionally, e.g. if we error in any of the BN arithmetic steps.
+    // tmp1 = (1 + n * plaintext) - plaintext-derived
+    // tmp2 = r^n mod n^2 - randomness-derived
+    if (tmp1)
+    {
+        BN_clear(tmp1);
+    }
+    if (tmp2)
+    {
+        BN_clear(tmp2);
+    }
     BN_CTX_end(ctx);
 
     return ret;
@@ -693,7 +707,7 @@ static inline long encrypt_openssl(const paillier_public_key_t *key, BIGNUM *cip
     
     if (!r)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
     else
     {
@@ -701,7 +715,7 @@ static inline long encrypt_openssl(const paillier_public_key_t *key, BIGNUM *cip
         {
             if (!BN_rand_range(r, key->n))
             {
-                ret = ERR_get_error() * -1;
+                ret = paillier_error_from_openssl();
                 break;
             }
             
@@ -709,7 +723,7 @@ static inline long encrypt_openssl(const paillier_public_key_t *key, BIGNUM *cip
 
         } while (ret == PAILLIER_ERROR_INVALID_RANDOMNESS);
     }
-
+    BN_clear(r);
     BN_CTX_end(ctx);
 
     return ret;
@@ -734,8 +748,8 @@ long paillier_decrypt_openssl_internal(const paillier_private_key_t *key, const 
         goto cleanup;
     }
 
-    // Compute the plaintext = paillier_L(ciphertext^lamda mod n2)*mu mod n
-    if (!BN_mod_exp(tmp, ciphertext, key->lamda, key->pub.n2, ctx))
+    // Compute the plaintext = paillier_L(ciphertext^lambda mod n2)*mu mod n
+    if (!BN_mod_exp(tmp, ciphertext, key->lambda, key->pub.n2, ctx))
     {
         goto cleanup;
     }
@@ -746,7 +760,7 @@ long paillier_decrypt_openssl_internal(const paillier_private_key_t *key, const 
         goto cleanup;
     }
     
-    ret = -1; //revet to openssl error
+    ret = -1; //revert to openssl error
 
     if (!BN_mod_mul(plaintext, tmp, key->mu, key->pub.n, ctx))
     {
@@ -758,9 +772,9 @@ long paillier_decrypt_openssl_internal(const paillier_private_key_t *key, const 
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
-
+    BN_clear(tmp);
     BN_CTX_end(ctx);
     return ret;
 }
@@ -771,11 +785,13 @@ long paillier_encrypt(const paillier_public_key_t *key, const uint8_t *plaintext
     int len = 0;
     BIGNUM *msg = NULL, *c = NULL;
     BN_CTX *ctx = NULL;
-
+    uint32_t n2_size;
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
+
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
 
     if (!plaintext || plaintext_len > (uint32_t)BN_num_bytes(key->n))
     {
@@ -784,10 +800,10 @@ long paillier_encrypt(const paillier_public_key_t *key, const uint8_t *plaintext
 
     if (ciphertext_real_len)
     {
-        *ciphertext_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *ciphertext_real_len = n2_size;
     }
 
-    if (!ciphertext || ciphertext_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!ciphertext || ciphertext_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -824,7 +840,7 @@ long paillier_encrypt(const paillier_public_key_t *key, const uint8_t *plaintext
         goto cleanup;
     }
 
-    len = BN_bn2bin(c, ciphertext);
+    len = BN_bn2binpad(c, ciphertext, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -839,11 +855,12 @@ long paillier_encrypt(const paillier_public_key_t *key, const uint8_t *plaintext
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
     {
+        BN_clear(msg);
         BN_CTX_end(ctx);
         BN_CTX_free(ctx);
     }
@@ -875,6 +892,8 @@ long paillier_encrypt_to_ciphertext(const paillier_public_key_t *key, const uint
     {
         return PAILLIER_ERROR_OUT_OF_MEMORY;
     }
+    
+    c->cipher_size = (uint32_t)BN_num_bytes(key->n2);
 
     if ((c->ciphertext = BN_new()) == NULL)
     {
@@ -928,9 +947,13 @@ long paillier_encrypt_to_ciphertext(const paillier_public_key_t *key, const uint
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
+    if (msg)
+    {
+        BN_clear(msg);
+    }
     if (ctx)
     {
         BN_CTX_end(ctx);
@@ -946,18 +969,21 @@ long paillier_encrypt_integer(const paillier_public_key_t *key, uint64_t plainte
     int len = 0;
     BN_CTX *ctx = NULL;
     BIGNUM *msg = NULL, *c = NULL;
+    uint32_t n2_size = 0;
 
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-    
+
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
     if (ciphertext_real_len)
     {
-        *ciphertext_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *ciphertext_real_len = n2_size;
     }
 
-    if (!ciphertext || ciphertext_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!ciphertext || ciphertext_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -988,7 +1014,7 @@ long paillier_encrypt_integer(const paillier_public_key_t *key, uint64_t plainte
         goto cleanup;
     }
 
-    len = BN_bn2bin(c, ciphertext);
+    len = BN_bn2binpad(c, ciphertext, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -997,13 +1023,13 @@ long paillier_encrypt_integer(const paillier_public_key_t *key, uint64_t plainte
 
     if (ciphertext_real_len)
     {
-        *ciphertext_real_len = len;
+        *ciphertext_real_len = n2_size;
     }
 
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -1077,7 +1103,12 @@ long paillier_decrypt(const paillier_private_key_t *key, const uint8_t *cipherte
     }
 
     len = BN_bn2bin(msg, plaintext);
-    if (len <= 0)
+    if (len == 0 && BN_is_zero(msg))
+    {
+        plaintext[0] = 0;
+        len = 1;
+    }
+    else if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
         goto cleanup;
@@ -1091,7 +1122,7 @@ long paillier_decrypt(const paillier_private_key_t *key, const uint8_t *cipherte
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -1170,7 +1201,7 @@ long paillier_decrypt_integer(const paillier_private_key_t *key, const uint8_t *
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -1197,24 +1228,27 @@ long paillier_add(const paillier_public_key_t *key,
     BIGNUM *res = NULL;
     long ret = -1;
     int len = 0;
+    uint32_t n2_size;
 
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
     
-    if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2) ||
-        !b_ciphertext || b_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
+    if (!a_ciphertext || a_ciphertext_len > n2_size ||
+        !b_ciphertext || b_ciphertext_len > n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
     
     if (result_real_len)
     {
-        *result_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *result_real_len = n2_size;
     }
     
-    if (!result || result_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!result || result_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1259,7 +1293,7 @@ long paillier_add(const paillier_public_key_t *key,
     }
         
 
-    len = BN_bn2bin(res, result);
+    len = BN_bn2binpad(res, result, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1268,7 +1302,7 @@ long paillier_add(const paillier_public_key_t *key,
 
     if (result_real_len)
     {
-        *result_real_len = len;
+        *result_real_len = n2_size;
     }
 
     ret = PAILLIER_SUCCESS;
@@ -1276,7 +1310,7 @@ long paillier_add(const paillier_public_key_t *key,
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -1295,22 +1329,26 @@ long paillier_add_integer(const paillier_public_key_t *key, const uint8_t *a_cip
     BIGNUM *res = NULL;
     long ret = -1;
     int len = 0;
+    uint32_t n2_size;
 
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-    if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
+    
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
+    if (!a_ciphertext || a_ciphertext_len > n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
 
     if (result_real_len)
     {
-        *result_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *result_real_len = n2_size;
     }
 
-    if (!result || result_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!result || result_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1362,7 +1400,7 @@ long paillier_add_integer(const paillier_public_key_t *key, const uint8_t *a_cip
     }
         
 
-    len = BN_bn2bin(res, result);
+    len = BN_bn2binpad(res, result, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1379,7 +1417,7 @@ long paillier_add_integer(const paillier_public_key_t *key, const uint8_t *a_cip
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -1405,24 +1443,27 @@ long paillier_sub(const paillier_public_key_t *key,
     BIGNUM *res = NULL;
     long ret = -1;
     int len = 0;
+    uint32_t n2_size;
 
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
 
-    if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2) ||
-        !b_ciphertext || b_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
+    if (!a_ciphertext || a_ciphertext_len > n2_size ||
+        !b_ciphertext || b_ciphertext_len > n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
         
     if (result_real_len)
     {
-        *result_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *result_real_len = n2_size;
     }
 
-    if (!result || result_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!result || result_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1468,7 +1509,7 @@ long paillier_sub(const paillier_public_key_t *key,
     if (!BN_mod_mul(res, a, b, key->n2, ctx))
         goto cleanup;
 
-    len = BN_bn2bin(res, result);
+    len = BN_bn2binpad(res, result, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1485,7 +1526,7 @@ long paillier_sub(const paillier_public_key_t *key,
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
     
     if (ctx)
@@ -1504,20 +1545,25 @@ long paillier_sub_integer(const paillier_public_key_t *key, const uint8_t *a_cip
     BIGNUM *res = NULL;
     long ret = -1;
     int len = 0;
+    uint32_t n2_size;
+
     if (!key)
     {        
         return PAILLIER_ERROR_INVALID_KEY;
     }
-    if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
+    
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
+    if (!a_ciphertext || a_ciphertext_len > n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
     if (result_real_len)
     {
-        *result_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *result_real_len = n2_size;
     }
 
-    if (!result || result_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!result || result_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1573,7 +1619,7 @@ long paillier_sub_integer(const paillier_public_key_t *key, const uint8_t *a_cip
         goto cleanup;
     }
 
-    len = BN_bn2bin(res, result);
+    len = BN_bn2binpad(res, result, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1590,7 +1636,7 @@ long paillier_sub_integer(const paillier_public_key_t *key, const uint8_t *a_cip
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
 
     if (ctx)
@@ -1616,12 +1662,16 @@ long paillier_mul(const paillier_public_key_t *key,
     BIGNUM *res = NULL;
     long ret = -1;
     int len = 0;
+    uint32_t n2_size;
+
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-        
-    if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
+    
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
+    if (!a_ciphertext || a_ciphertext_len > n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1633,10 +1683,10 @@ long paillier_mul(const paillier_public_key_t *key,
         
     if (result_real_len)
     {
-        *result_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *result_real_len = n2_size;
     }
         
-    if (!result || result_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!result || result_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1679,7 +1729,7 @@ long paillier_mul(const paillier_public_key_t *key,
         goto cleanup;
     }
 
-    len = BN_bn2bin(res, result);
+    len = BN_bn2binpad(res, result, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1688,7 +1738,7 @@ long paillier_mul(const paillier_public_key_t *key,
 
     if (result_real_len)
     {
-        *result_real_len = len;
+        *result_real_len = n2_size;
     }
         
     ret = PAILLIER_SUCCESS;
@@ -1696,7 +1746,7 @@ long paillier_mul(const paillier_public_key_t *key,
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
         
     if (ctx)
@@ -1721,23 +1771,26 @@ long paillier_mul_integer(const paillier_public_key_t *key,
     BIGNUM *res = NULL;
     long ret = -1;
     int len = 0;
+    uint32_t n2_size;
 
     if (!key)
     {
         return PAILLIER_ERROR_INVALID_KEY;
     }
-        
-    if (!a_ciphertext || a_ciphertext_len > (uint32_t)BN_num_bytes(key->n2))
+    
+    n2_size = (uint32_t)BN_num_bytes(key->n2);
+
+    if (!a_ciphertext || a_ciphertext_len > n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
         
     if (result_real_len)
     {
-        *result_real_len = (uint32_t)BN_num_bytes(key->n2);
+        *result_real_len = n2_size;
     }
         
-    if (!result || result_len < (uint32_t)BN_num_bytes(key->n2))
+    if (!result || result_len < n2_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
@@ -1780,7 +1833,7 @@ long paillier_mul_integer(const paillier_public_key_t *key,
     }
         
 
-    len = BN_bn2bin(res, result);
+    len = BN_bn2binpad(res, result, n2_size);
     if (len <= 0)
     {
         ret = PAILLIER_ERROR_UNKNOWN;
@@ -1789,7 +1842,7 @@ long paillier_mul_integer(const paillier_public_key_t *key,
     
     if (result_real_len)
     {
-        *result_real_len = len;
+        *result_real_len = n2_size;
     }
         
     
@@ -1798,7 +1851,7 @@ long paillier_mul_integer(const paillier_public_key_t *key,
 cleanup:
     if (-1 == ret)
     {
-        ret = ERR_get_error() * -1;
+        ret = paillier_error_from_openssl();
     }
         
     if (ctx)
@@ -1818,24 +1871,30 @@ long paillier_get_ciphertext(const paillier_ciphertext_t *ciphertext_object,
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
-        
     if (!ciphertext && ciphertext_len)
     {
         return PAILLIER_ERROR_INVALID_PARAM;
     }
-        
+
+    const uint32_t encrypted_bytes = (uint32_t)BN_num_bytes(ciphertext_object->ciphertext);
+    
+    if (encrypted_bytes > ciphertext_object->cipher_size)
+    {
+        return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
+    }
+
     if (ciphertext_real_len)
     {
-        *ciphertext_real_len = (uint32_t)BN_num_bytes(ciphertext_object->ciphertext);
+        *ciphertext_real_len = ciphertext_object->cipher_size;
     }
         
-    if (!ciphertext || ciphertext_len < (uint32_t)BN_num_bytes(ciphertext_object->ciphertext))
+    if (!ciphertext || ciphertext_len < ciphertext_object->cipher_size)
     {
         return PAILLIER_ERROR_INVALID_CIPHER_TEXT;
     }
         
     
-    if (BN_bn2bin(ciphertext_object->ciphertext, ciphertext) <= 0)
+    if (BN_bn2binpad(ciphertext_object->ciphertext, ciphertext, ciphertext_object->cipher_size) <= 0)
     {
         return PAILLIER_ERROR_UNKNOWN;
     }
@@ -1848,8 +1907,18 @@ void paillier_free_ciphertext(paillier_ciphertext_t *ciphertext_object)
     if (ciphertext_object)
     {
         BN_free(ciphertext_object->ciphertext);
-        BN_free(ciphertext_object->r);
+        BN_clear_free(ciphertext_object->r);
         free(ciphertext_object);
     }
 }
 
+long paillier_error_from_openssl()
+{
+    long ret = ERR_get_error() * -1;
+    if (0 == ret)
+    {
+        ret = PAILLIER_ERROR_UNKNOWN;
+    }
+
+    return ret;
+}

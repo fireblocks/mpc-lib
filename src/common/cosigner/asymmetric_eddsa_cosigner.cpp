@@ -13,15 +13,13 @@ namespace common
 namespace cosigner
 {
 
-const std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> asymmetric_eddsa_cosigner::_ctx(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
-
-asymmetric_eddsa_cosigner::asymmetric_eddsa_cosigner(platform_service& cosigner_service, const cmp_key_persistency& key_persistency) : 
-    _service(cosigner_service), _key_persistency(key_persistency)
+asymmetric_eddsa_cosigner::asymmetric_eddsa_cosigner(platform_service& service, const cmp_key_persistency& key_persistency) :
+    _service(service), _key_persistency(key_persistency), _ctx(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free)
 {
     if (!_ctx)
     {
         LOG_ERROR("Failed to create ed25519 algebra");
-        throw cosigner_exception(cosigner_exception::NO_MEM);
+        throw_cosigner_exception(cosigner_exception::NO_MEM);
     }
 }
 
@@ -37,7 +35,7 @@ void asymmetric_eddsa_cosigner::derivation_key_delta(const elliptic_curve256_poi
         if (HD_DERIVE_SUCCESS != retval)
         {
             LOG_ERROR("Error deriving private key: %d", retval);
-            throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
         }
         memcpy(derived_pubkey, tmp_derived_pubkey, sizeof(ed25519_point_t));
 

@@ -8,6 +8,7 @@ add_executable(cosigner_test
     ecdsa_online_test.cpp
     eddsa_offline_test.cpp
     eddsa_online_test.cpp
+    bam_test.cpp
     setup_test.cpp
 )
 

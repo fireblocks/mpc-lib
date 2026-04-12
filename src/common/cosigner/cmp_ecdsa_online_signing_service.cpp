@@ -17,25 +17,6 @@ namespace common
 namespace cosigner
 {
 
-#ifdef DEBUG
-template<typename T>
-static inline std::string HexStr(const T itbegin, const T itend)
-{
-    std::string rv;
-    static const char hexmap[16] = { '0', '1', '2', '3', '4', '5', '6', '7',
-                                     '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-    rv.reserve((itend-itbegin)*3);
-    for(T it = itbegin; it < itend; ++it)
-    {
-        unsigned char val = (unsigned char)(*it);
-        rv.push_back(hexmap[val>>4]);
-        rv.push_back(hexmap[val&15]);
-    }
-
-    return rv;
-}
-#endif
-
 static inline const char* to_string(cosigner_sign_algorithm algorithm)
 {
     switch (algorithm)
@@ -143,7 +124,6 @@ void cmp_ecdsa_online_signing_service::start_signing(const std::string& key_id, 
 
 uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid, const std::map<uint64_t, std::vector<cmp_mta_request>>& requests, uint32_t version, cmp_mta_responses& response)
 {
-    (void)version;
     LOG_INFO("Entering txid = %s", txid.c_str());
     cmp_signing_metadata metadata;
     _signing_persistency.load_cmp_signing_data(txid, metadata);
@@ -152,19 +132,29 @@ uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid,
     if (requests.size() != metadata.signers_ids.size())
     {
         LOG_ERROR("got %lu mta requests but the request is for %lu players", requests.size(), metadata.signers_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     static const commitments_sha256_t ZERO = {0};
     if (memcmp(metadata.ack, ZERO, sizeof(commitments_sha256_t)) != 0)
     {
         LOG_ERROR("Can't change mta message ack");
-        throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
 
+    if (version > metadata.version)
+    {
+        LOG_FATAL("Min version %d is more than mpc version %d ", version, metadata.version);
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+    
 #ifndef MOBILE
-    _timing_map.insert(txid);
+    {
+        _timing_map.insert(txid);
+    }
 #endif
+
+    metadata.version = version;
 
     ack_mta_request(metadata.sig_data.size(), requests, metadata.signers_ids, metadata.ack);
     memcpy(response.ack, metadata.ack, sizeof(commitments_sha256_t));
@@ -188,11 +178,23 @@ uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid,
             if (my_proof == req_it->second[i].mta_proofs.end())
             {
                 LOG_ERROR("Player %" PRIu64 " didn't send k rddh proof to me in block %lu", req_it->first, i);
-                throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+                throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
             }
+
             paillier_with_range_proof_t proof = {(uint8_t*)req_it->second[i].mta.message.data(), (uint32_t)req_it->second[i].mta.message.size(), (uint8_t*)my_proof->second.data(), (uint32_t)my_proof->second.size()};
-            auto status = range_proof_diffie_hellman_zkpok_verify(aux.ring_pedersen.get(), key_md.players_info.at(req_it->first).paillier.get(), algebra, aad.data(), aad.size(),
-                &req_it->second[i].Z.data, &req_it->second[i].A.data, &req_it->second[i].B.data, &proof);
+            const uint8_t strict_ciphertext_length = (version >= fireblocks::common::cosigner::MPC_EXTENDED_MTA) ? 1 : 0;
+
+            auto status = range_proof_diffie_hellman_zkpok_verify(aux.ring_pedersen.get(), 
+                                                                  key_md.players_info.at(req_it->first).paillier.get(), 
+                                                                  algebra, 
+                                                                  aad.data(), 
+                                                                  aad.size(),
+                                                                  &req_it->second[i].Z.data, 
+                                                                  &req_it->second[i].A.data, 
+                                                                  &req_it->second[i].B.data, 
+                                                                  &proof,
+                                                                  strict_ciphertext_length,
+                                                                  /*use_extended_seed=*/0);
             if (status != ZKP_SUCCESS)
             {
                 LOG_ERROR("Failed to verify k rddh proof from player %" PRIu64 " block %lu, error %d", req_it->first, i, status);
@@ -201,6 +203,7 @@ uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid,
         }
     }
 
+    LOG_INFO("Calculating mta response");
     elliptic_curve_scalar key;
     cosigner_sign_algorithm algo;
     _key_persistency.load_key(metadata.key_id, algo, key.data);
@@ -209,7 +212,7 @@ uint64_t cmp_ecdsa_online_signing_service::mta_response(const std::string& txid,
     for (size_t i = 0; i < metadata.sig_data.size(); i++)
     {
         cmp_signature_data& data = metadata.sig_data[i];
-        cmp_mta_response resp = create_mta_response(data, algebra, my_id, aad, key_md, requests, i, key, aux);
+        cmp_mta_response resp = create_mta_response(data, algebra, my_id, aad, key_md, requests, i, key, aux, version);
         response.response.push_back(std::move(resp));
     }
     _signing_persistency.update_cmp_signing_data(txid, metadata);
@@ -226,7 +229,7 @@ uint64_t cmp_ecdsa_online_signing_service::mta_verify(const std::string& txid, c
     if (mta_responses.size() != metadata.signers_ids.size())
     {
         LOG_ERROR("got %lu mta responses but the request is for %lu players", mta_responses.size(), metadata.signers_ids.size());
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     uint64_t my_id = _service.get_id_from_keyid(metadata.key_id);
@@ -242,22 +245,24 @@ uint64_t cmp_ecdsa_online_signing_service::mta_verify(const std::string& txid, c
         if (it == mta_responses.end())
         {
             LOG_ERROR("missing mta response from player %" PRIu64, *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (it->first != my_id && it->second.response.size() != metadata.sig_data.size())
         {
             LOG_ERROR("got %lu mta responses from player %" PRIu64 ", but the request is for %lu presigning data", it->second.response.size(), *i, metadata.sig_data.size());
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
         if (memcmp(it->second.ack, metadata.ack, sizeof(commitments_sha256_t)) != 0)
         {
             LOG_ERROR("got wrong ack from player %" PRIu64, *i);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
         }
     }
 
     std::string uuid = metadata.key_id + txid;
-    std::map<uint64_t, std::unique_ptr<mta::base_response_verifier>> verifiers;
+    std::map<uint64_t, std::unique_ptr<mta::base_response_verifier> > verifiers;
+
+    //for each party (excluding myself) create a verifier
     for (auto it = mta_responses.begin(); it != mta_responses.end(); ++it)
     {
         if (it->first == my_id)
@@ -265,7 +270,8 @@ uint64_t cmp_ecdsa_online_signing_service::mta_verify(const std::string& txid, c
 
         const auto& other = key_md.players_info.at(it->first);
         auto aad = build_aad(uuid, it->first, key_md.seed);
-        verifiers[it->first] = mta::new_response_verifier(metadata.sig_data.size(),
+        verifiers[it->first] = mta::new_response_verifier(metadata.version, 
+                                                          metadata.sig_data.size(),
                                                           it->first, 
                                                           algebra,
                                                           aad,
@@ -290,6 +296,7 @@ uint64_t cmp_ecdsa_online_signing_service::mta_verify(const std::string& txid, c
             mta_responses,  //to be able to perform an optimization all mta responses are passed
             i, 
             aux, 
+            metadata.version,
             verifiers);
             
         deltas.push_back(std::move(delta));
@@ -318,7 +325,7 @@ uint64_t cmp_ecdsa_online_signing_service::get_si(const std::string& txid, const
     cmp_key_metadata key_md;
     _key_persistency.load_key_metadata(metadata.key_id, key_md, false);
 
-    // corrently GFp_curve_algebra_abs can be used for both secp256k1, secp256r1 and stark
+    // currently GFp_curve_algebra_abs can be used for both secp256k1, secp256r1 and stark
     if (key_md.algorithm != ECDSA_SECP256K1 && key_md.algorithm != ECDSA_SECP256R1 && key_md.algorithm != ECDSA_STARK)
     {
         LOG_ERROR("Can't use key type %d for ECDSA", key_md.algorithm);
@@ -386,23 +393,23 @@ uint64_t cmp_ecdsa_online_signing_service::get_si(const std::string& txid, const
 
         if (!counter)
         {
-            LOG_ERROR("failed to found positive R, WTF???");
+            LOG_ERROR("failed to find positive R");
             throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
         }
 
         LOG_INFO("calculating sig with R' = R * %u", counter);
         memcpy(data.R.data, R, sizeof(elliptic_curve256_point_t));
 
-        // clac sig.s = k(m + r * delta) +r(k * x + Chi)
-        elliptic_curve256_scalar_t tmp;
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp, r, sizeof(elliptic_curve256_scalar_t), delta.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), data.message, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &s.data, tmp, sizeof(elliptic_curve256_scalar_t), data.k.data, sizeof(elliptic_curve256_scalar_t)));
+        // calc sig.s = k(m + r * delta) +r(k * x + Chi)
+        elliptic_curve_scalar tmp;
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp.data, r, sizeof(elliptic_curve256_scalar_t), delta.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), data.message, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &s.data, tmp.data, sizeof(elliptic_curve256_scalar_t), data.k.data, sizeof(elliptic_curve256_scalar_t)));
 
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp, data.k.data, sizeof(elliptic_curve256_scalar_t), key.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), data.chi.data, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp, tmp, sizeof(elliptic_curve256_scalar_t), r, sizeof(elliptic_curve256_scalar_t)));
-        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &s.data, s.data, sizeof(elliptic_curve256_scalar_t), tmp, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp.data, data.k.data, sizeof(elliptic_curve256_scalar_t), key.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), data.chi.data, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_mul_scalars(curve, &tmp.data, tmp.data, sizeof(elliptic_curve256_scalar_t), r, sizeof(elliptic_curve256_scalar_t)));
+        throw_cosigner_exception(GFp_curve_algebra_add_scalars(curve, &s.data, s.data, sizeof(elliptic_curve256_scalar_t), tmp.data, sizeof(elliptic_curve256_scalar_t)));
         if (counter > 1)
         {
             elliptic_curve256_scalar_t counter_inverse = {0};
@@ -449,7 +456,7 @@ uint64_t cmp_ecdsa_online_signing_service::get_cmp_signature(const std::string& 
     cmp_key_metadata key_md;
     _key_persistency.load_key_metadata(metadata.key_id, key_md, false);
 
-    // corrently secp256k1_algebra can be used for both secp256k1 and secp256r1
+    // currently secp256k1_algebra can be used for both secp256k1 and secp256r1
     if (key_md.algorithm != ECDSA_SECP256K1 && key_md.algorithm != ECDSA_SECP256R1 && key_md.algorithm != ECDSA_STARK)
     {
         LOG_ERROR("Can't use key type %d for ECDSA", key_md.algorithm);

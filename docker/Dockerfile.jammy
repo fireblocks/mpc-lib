@@ -1,0 +1,15 @@
+FROM ubuntu:jammy
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt install -y \
+    build-essential \
+    uuid-dev \
+    libssl-dev \
+    libsecp256k1-dev \
+    cmake \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/archives/*
+
+COPY . /usr/src/mpc-lib/
+WORKDIR /usr/src/mpc-lib/

@@ -43,6 +43,14 @@ typedef elliptic_curve_algebra_status (*elliptic_curve256_inverse)(const struct 
 typedef elliptic_curve_algebra_status (*elliptic_curve256_rand)(const struct elliptic_curve256_algebra_ctx *ctx, elliptic_curve256_scalar_t *res);
 typedef elliptic_curve_algebra_status (*elliptic_curve256_reduce)(const struct elliptic_curve256_algebra_ctx *ctx, elliptic_curve256_scalar_t *res, const elliptic_curve256_scalar_t *val);
 typedef elliptic_curve_algebra_status (*elliptic_curve256_hash_on_curve)(const struct elliptic_curve256_algebra_ctx *ctx, elliptic_curve256_point_t *res, const uint8_t *msg, uint32_t msg_len);
+/*
+ * Validates that a point is a valid encoding and is NOT the point-at-infinity.
+ * Returns:
+ *  - ELLIPTIC_CURVE_ALGEBRA_SUCCESS on valid, non-infinity points
+ *  - ELLIPTIC_CURVE_ALGEBRA_INVALID_POINT on infinity or invalid encodings
+ *  - ELLIPTIC_CURVE_ALGEBRA_INVALID_PARAMETER on bad input/context
+ */
+typedef elliptic_curve_algebra_status (*elliptic_curve256_validate_non_infinity_point)(const struct elliptic_curve256_algebra_ctx *ctx, const elliptic_curve256_point_t *p);
 
 typedef struct elliptic_curve256_algebra_ctx
 {
@@ -51,13 +59,13 @@ typedef struct elliptic_curve256_algebra_ctx
 
     int (*release)(struct elliptic_curve256_algebra_ctx *ctx);
 
-    /* Returns the gruop order, this is a const vaule 256bit long */
+    /* Returns the group order, this is a const value 256bit long */
     const uint8_t *(*order)(const struct elliptic_curve256_algebra_ctx *ctx);
     /* Returns the size (in bytes) needed to represent a point on the curve, size must be <= ELLIPTIC_CURVE_COMPRESSED_POINT_LEN */
     uint8_t (*point_size)(const struct elliptic_curve256_algebra_ctx *ctx);
-    /* Returns the infinity point of the curve, this is a const vaule */
+    /* Returns the infinity point of the curve, this is a const value */
     const elliptic_curve256_point_t *(*infinity_point)(const struct elliptic_curve256_algebra_ctx *ctx);
-
+    elliptic_curve256_validate_non_infinity_point validate_non_infinity_point;
     elliptic_curve256_generator_mul_data generator_mul_data;
     elliptic_curve256_verify verify;
     elliptic_curve256_verify_linear_combination verify_linear_combination;
@@ -72,7 +80,7 @@ typedef struct elliptic_curve256_algebra_ctx
     elliptic_curve256_reduce reduce;
     elliptic_curve256_hash_on_curve hash_on_curve;
 
-    /* Returns the internal represantation of group order */
+    /* Returns the internal representation of group order */
     const struct bignum_st *(*order_internal)(const struct elliptic_curve256_algebra_ctx *ctx);
 } elliptic_curve256_algebra_ctx_t;
 
