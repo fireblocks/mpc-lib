@@ -15,7 +15,7 @@ The libraries and headers of the following dependencies are required:
 * libuuid (for tests)
 * libsecp256k1 (for tests, optional)
 
-All required dependencies can be installed with the command:
+You can install all necessary dependencies by running the following command:
 ```sh
 apt install build-essential libssl-dev uuid-dev libsecp256k1-dev
 ```
