@@ -8,7 +8,7 @@ It takes the form of a library (`libcosigner`) containing the algorithms and sup
 
 ### Prerequisites
 
-This version of the code targets *Ubuntu Linux 20.04 LTS* release.
+This version of the code targets *Ubuntu Linux 20.04 LTS*.
 The libraries and headers of the following dependencies are required:
 
 * OpenSSL version 1.1.1 or higher
