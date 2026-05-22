@@ -1,4 +1,5 @@
 FROM ubuntu:focal
+# Probe: harmless comment for Snyk/PR automation observation.
 
 ENV DEBIAN_FRONTEND=noninteractive
 
