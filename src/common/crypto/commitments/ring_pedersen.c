@@ -7,6 +7,7 @@
 #include <openssl/bn.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
+#include "crypto/common/byte_io.h"
 
 #define RING_PEDERSEN_STATISTICAL_SECURITY 80
 #define MIN_KEY_LEN_IN_BITS 256
@@ -237,15 +238,15 @@ static uint32_t ring_pedersen_public_serialize_internal(const ring_pedersen_publ
         return needed_len;
     }
         
-    *(uint32_t*)p = n_len;
+    store_u32(p, n_len);
     p += sizeof(uint32_t);
     BN_bn2bin(pub->n, p);
     p += n_len;
-    *(uint32_t*)p = s_len;
+    store_u32(p, s_len);
     p += sizeof(uint32_t);
     BN_bn2bin(pub->s, p);
     p += s_len;
-    *(uint32_t*)p = t_len;
+    store_u32(p, t_len);
     p += sizeof(uint32_t);
     BN_bn2bin(pub->t, p);
     return needed_len;
@@ -262,7 +263,7 @@ static uint32_t ring_pedersen_public_deserialize_internal(ring_pedersen_public_t
         return 0;
     }
         
-    len = *(uint32_t*)p;
+    len = load_u32(p);
     p += sizeof(uint32_t);
     if (len > (buffer_len - sizeof(uint32_t) * 3))
     {
@@ -275,7 +276,7 @@ static uint32_t ring_pedersen_public_deserialize_internal(ring_pedersen_public_t
     p += len;
     buffer_len -= len;
     
-    len = *(uint32_t*)p;
+    len = load_u32(p);
     p += sizeof(uint32_t);
     if (len > (buffer_len - sizeof(uint32_t) * 2))
     {
@@ -287,7 +288,7 @@ static uint32_t ring_pedersen_public_deserialize_internal(ring_pedersen_public_t
     p += len;
     buffer_len -= len;
 
-    len = *(uint32_t*)p;
+    len = load_u32(p);
     p += sizeof(uint32_t);
     if (len > (buffer_len - sizeof(uint32_t)))
     {
@@ -425,11 +426,11 @@ uint8_t *ring_pedersen_private_serialize(const ring_pedersen_private_t *priv, ui
     }
         
     p += ring_pedersen_public_serialize_internal(&priv->pub, buffer, buffer_len);
-    *(uint32_t*)p = lambda_len;
+    store_u32(p, lambda_len);
     p += sizeof(uint32_t);
     BN_bn2bin(priv->lambda, p);
     p += lambda_len;
-    *(uint32_t*)p = phi_len;
+    store_u32(p, phi_len);
     p += sizeof(uint32_t);
     BN_bn2bin(priv->phi_n, p);
     return buffer;
@@ -464,7 +465,7 @@ ring_pedersen_private_t *ring_pedersen_private_deserialize(const uint8_t *buffer
     }
         
     
-    len = *(uint32_t*)p;
+    len = load_u32(p);
     p += sizeof(uint32_t);
     if (len > (buffer_len - sizeof(uint32_t) * 2))
     {
@@ -481,7 +482,7 @@ ring_pedersen_private_t *ring_pedersen_private_deserialize(const uint8_t *buffer
     p += len;
     buffer_len -= len;
 
-    len = *(uint32_t*)p;
+    len = load_u32(p);
     p += sizeof(uint32_t);
     if (len > (buffer_len - sizeof(uint32_t)))
     {
@@ -604,9 +605,9 @@ static inline void serialize_ring_pedersen_param_zkp(const ring_pedersen_param_p
 {
     uint32_t n_len = BN_num_bytes(n);
     uint8_t *ptr = serialized_proof;
-    *(uint32_t*)ptr = n_len;
+    store_u32(ptr, n_len);
     ptr += sizeof(uint32_t);
-    *(uint32_t*)ptr = RING_PEDERSEN_STATISTICAL_SECURITY;
+    store_u32(ptr, RING_PEDERSEN_STATISTICAL_SECURITY);
     ptr += sizeof(uint32_t);
     
     for (uint32_t i = 0; i < RING_PEDERSEN_STATISTICAL_SECURITY; ++i)
@@ -623,7 +624,7 @@ static inline int deserialize_ring_pedersen_param_zkp(ring_pedersen_param_proof_
     uint32_t n_len = BN_num_bytes(n);
     uint32_t proof_n_len;
     const uint8_t *ptr = serialized_proof;
-    proof_n_len = *(uint32_t*)ptr;
+    proof_n_len = load_u32(ptr);
     ptr += sizeof(uint32_t);
 
     if (n_len != proof_n_len)
@@ -632,7 +633,7 @@ static inline int deserialize_ring_pedersen_param_zkp(ring_pedersen_param_proof_
     }
         
     
-    if (*(uint32_t*)ptr < RING_PEDERSEN_STATISTICAL_SECURITY)
+    if (load_u32(ptr) < RING_PEDERSEN_STATISTICAL_SECURITY)
     {
         return 0;
     }

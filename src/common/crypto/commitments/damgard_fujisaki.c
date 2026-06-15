@@ -1,5 +1,6 @@
 #include "damgard_fujisaki_internal.h"
 #include "crypto/commitments/damgard_fujisaki.h"
+#include "crypto/common/byte_io.h"
 #include "crypto/zero_knowledge_proof/range_proofs.h"
 #include "crypto/drng/drng.h"
 #include "crypto/algebra_utils/algebra_utils.h"
@@ -617,7 +618,7 @@ uint8_t* damgard_fujisaki_public_serialize(const damgard_fujisaki_public_t* pub,
     }
         
     // size(n)
-    *(uint32_t*)pos =  size_n;
+    store_u32(pos, size_n);
     pos += sizeof(uint32_t);
     
     // n
@@ -628,7 +629,7 @@ uint8_t* damgard_fujisaki_public_serialize(const damgard_fujisaki_public_t* pub,
     pos += size_n;
 
     // dimension
-    *(uint32_t*)pos =  pub->dimension;
+    store_u32(pos, pub->dimension);
     pos += sizeof(uint32_t);
 
     // t
@@ -662,7 +663,7 @@ static inline uint32_t damgard_fujisaki_public_deserialize_internal(damgard_fuji
     
     // read n_len from buffer
     // from now on use only pos pointer
-    n_len = *(const uint32_t *)buffer;
+    n_len = load_u32(buffer);
     const uint8_t* pos = buffer + sizeof(uint32_t);
     
     if (n_len > (8 * 1024))
@@ -688,7 +689,7 @@ static inline uint32_t damgard_fujisaki_public_deserialize_internal(damgard_fuji
     }
     pos += n_len;
 
-    pub->dimension = *(const uint32_t *)pos;
+    pub->dimension = load_u32(pos);
     pos += sizeof(uint32_t);
     if (pub->dimension == 0 || pub->dimension > MAX_ALLOWED_DIMENSIONS)
     {
