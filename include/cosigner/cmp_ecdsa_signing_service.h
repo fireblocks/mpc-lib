@@ -82,7 +82,7 @@ struct ecdsa_preprocessing_data
     byte_vector_t mta_request;
     std::map<uint64_t, byte_vector_t> G_proofs;
     std::map<uint64_t, ecdsa_signing_public_data> public_data;
-    ~ecdsa_preprocessing_data() {OPENSSL_cleanse(k.data, sizeof(ecdsa_preprocessing_data));}
+    // No destructor: scalar members self-wipe; a whole-struct cleanse here is UB + leak.
 };
 
 // this class holds the common functionality for cmp_ecdsa_online_signing_service and cmp_ecdsa_offline_signing_service
