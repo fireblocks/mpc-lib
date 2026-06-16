@@ -15,7 +15,7 @@ class container_cleaner
 {
 public:
     [[nodiscard]] explicit container_cleaner(T& secret) : _secret(secret) {}
-    ~container_cleaner() {OPENSSL_cleanse(&_secret[0], _secret.size());}
+    ~container_cleaner() {if (!_secret.empty()) OPENSSL_cleanse(_secret.data(), _secret.size());}
 
     container_cleaner(const container_cleaner&) = delete;
     container_cleaner& operator=(const container_cleaner&) = delete;
