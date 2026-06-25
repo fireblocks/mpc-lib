@@ -82,7 +82,21 @@ struct ecdsa_preprocessing_data
     byte_vector_t mta_request;
     std::map<uint64_t, byte_vector_t> G_proofs;
     std::map<uint64_t, ecdsa_signing_public_data> public_data;
-    ~ecdsa_preprocessing_data() {OPENSSL_cleanse(k.data, sizeof(ecdsa_preprocessing_data));}
+    ~ecdsa_preprocessing_data()
+    {
+        // Wipe each secret scalar individually. Passing sizeof(ecdsa_preprocessing_data)
+        // to OPENSSL_cleanse() spans the non-trivial members below (mta_request, G_proofs,
+        // public_data); since this destructor body runs before the implicit member
+        // destructors, it would zero the live std::vector/std::map control blocks and the
+        // subsequent ~vector/~map would then run on zeroed internals (UB + leak).
+        // Mirrors the correct pattern in eddsa_signature_data (eddsa_online_signing_service.h).
+        OPENSSL_cleanse(k.data, sizeof(k.data));
+        OPENSSL_cleanse(gamma.data, sizeof(gamma.data));
+        OPENSSL_cleanse(a.data, sizeof(a.data));
+        OPENSSL_cleanse(b.data, sizeof(b.data));
+        OPENSSL_cleanse(delta.data, sizeof(delta.data));
+        OPENSSL_cleanse(chi.data, sizeof(chi.data));
+    }
 };
 
 // this class holds the common functionality for cmp_ecdsa_online_signing_service and cmp_ecdsa_offline_signing_service
