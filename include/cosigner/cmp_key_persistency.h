@@ -21,6 +21,11 @@ namespace common
 namespace cosigner
 {
 
+// cmp_key_metadata::flags values. THRESHOLD marks a Shamir/VSS (threshold-DKG) key, for
+// which the online EdDSA signer applies the per-signer Lagrange weight (calc_w) so that
+// sum over signers of w_i * F(x_i) == F(0); additive (n-of-n) keys leave flags == 0.
+enum KEY_METADATA_FLAGS { THRESHOLD = 1 };
+
 struct cmp_player_info
 {
     elliptic_curve_point public_share;
@@ -32,7 +37,7 @@ struct cmp_key_metadata : public key_metadata_base
 {
     uint8_t t;                              // number of players needed for signature
     uint8_t n;                              // total number of players
-    uint32_t flags;                         // algorithm specific flags
+    uint32_t flags = 0;                     // algorithm specific flags (see KEY_METADATA_FLAGS); 0 = additive (n-of-n)
     uint64_t ttl;                           // 
     commitments_sha256_t seed;              // Usually product of hash of some state which is considered random
     std::map<uint64_t, cmp_player_info> players_info;

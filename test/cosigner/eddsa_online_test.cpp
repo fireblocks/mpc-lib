@@ -66,6 +66,10 @@ private:
     {
         // Stub for tests
     }
+    void fill_frost_signing_info_from_metadata(std::vector<frost_signing_properties>& info, const std::string& metadata) const override
+    {
+        // Stub for tests
+    }
     bool is_client_id(uint64_t player_id) const override {return false;}
     void mark_key_setup_in_progress(const std::string& key_id) const override {}
     void clear_key_setup_in_progress(const std::string& key_id) const override {}
@@ -141,12 +145,15 @@ struct eddsa_siging_info
     eddsa_online_signing_service signing_service;
 };
 
-static void eddsa_sign(players_setup_info& players, 
-                       const std::string& keyid, 
-                       uint32_t count, 
-                       const elliptic_curve256_point_t& pubkey, 
-                       const byte_vector_t& chaincode, 
-                       const std::vector<std::vector<uint32_t>>& paths, 
+// Templated on the persistency-map value type so the same driver works for both an additive
+// (CMP-setup) key (players_setup_info) and a Shamir/VSS threshold key (threshold_players_info).
+template<typename PersistencyMap>
+static void eddsa_sign(PersistencyMap& players,
+                       const std::string& keyid,
+                       uint32_t count,
+                       const elliptic_curve256_point_t& pubkey,
+                       const byte_vector_t& chaincode,
+                       const std::vector<std::vector<uint32_t>>& paths,
                        bool keccek,
                        uint32_t version)
 {
@@ -238,6 +245,97 @@ static void eddsa_sign(players_setup_info& players,
     }
 }
 
+// ---- Threshold (Shamir/VSS) EdDSA key support for tests ------------------------------------
+// A self-contained threshold key (no DKG required): build a degree-(t-1) polynomial F over the
+// ed25519 scalar field with F(0) = secret, give player i the evaluation F(i), and publish
+// pubkey = secret*G. Metadata carries flags = THRESHOLD so the online signer applies the
+// per-signer Lagrange weight (calc_w); any subset of >= t signers then reconstructs F(0).
+class threshold_key_persistency : public cmp_key_persistency
+{
+public:
+    void set(const std::string& keyid, const elliptic_curve256_scalar_t& share, const cmp_key_metadata& metadata)
+    {
+        _keyid = keyid;
+        memcpy(_share, share, sizeof(elliptic_curve256_scalar_t));
+        _metadata = metadata;
+        _set = true;
+    }
+
+    bool key_exist(const std::string& key_id) const override { return _set && key_id == _keyid; }
+
+    void load_key(const std::string& key_id, cosigner_sign_algorithm& algorithm, elliptic_curve256_scalar_t& private_key) const override
+    {
+        if (!key_exist(key_id))
+            throw cosigner_exception(cosigner_exception::BAD_KEY);
+        algorithm = _metadata.algorithm;
+        memcpy(private_key, _share, sizeof(elliptic_curve256_scalar_t));
+    }
+
+    const std::string get_tenantid_from_keyid(const std::string& key_id) const override { return TENANT_ID; }
+
+    void load_key_metadata(const std::string& key_id, cmp_key_metadata& metadata, bool full_load) const override
+    {
+        if (!key_exist(key_id))
+            throw cosigner_exception(cosigner_exception::BAD_KEY);
+        metadata = _metadata;
+    }
+
+    void load_auxiliary_keys(const std::string& key_id, auxiliary_keys& aux) const override {}
+
+private:
+    std::string _keyid;
+    elliptic_curve256_scalar_t _share = {0};
+    cmp_key_metadata _metadata;
+    bool _set = false;
+};
+
+typedef std::map<uint64_t, threshold_key_persistency> threshold_players_info;
+
+// Build a t-of-n Shamir/VSS threshold ed25519 key into `players`; returns pubkey = secret*G.
+static void create_threshold_secret(threshold_players_info& players, const std::string& keyid, uint8_t t, elliptic_curve256_point_t& pubkey)
+{
+    std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> algebra(elliptic_curve256_new_ed25519_algebra(), elliptic_curve256_algebra_ctx_free);
+    const uint8_t n = (uint8_t)players.size();
+    REQUIRE(t >= 1);
+    REQUIRE(t <= n);
+
+    // Polynomial coefficients a_0..a_{t-1}: a_0 is the secret, the rest are random.
+    // (elliptic_curve_scalar wraps the raw elliptic_curve256_scalar_t C array so it is usable in a vector.)
+    std::vector<elliptic_curve_scalar> coeff(t);
+    for (uint8_t j = 0; j < t; ++j)
+        REQUIRE(algebra->rand(algebra.get(), &coeff[j].data) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
+    REQUIRE(algebra->generator_mul(algebra.get(), &pubkey, &coeff[0].data) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
+    cmp_key_metadata metadata;
+    memcpy(metadata.public_key, pubkey, sizeof(elliptic_curve256_point_t));
+    metadata.algorithm = EDDSA_ED25519;
+    metadata.t = t;
+    metadata.n = n;
+    metadata.flags = THRESHOLD;
+    metadata.ttl = 0;
+    for (auto& p : players)
+        metadata.players_info[p.first];   // existence of each signer is all the eddsa signer checks
+
+    // share_i = F(i), evaluated by Horner over the big-endian scalar field.
+    for (auto& p : players)
+    {
+        elliptic_curve256_scalar_t id_be = {0};
+        const uint64_t id = p.first;
+        for (int b = 0; b < 8; ++b)
+            id_be[sizeof(elliptic_curve256_scalar_t) - 1 - b] = (uint8_t)(id >> (8 * b));
+
+        elliptic_curve256_scalar_t acc;
+        memcpy(acc, coeff[t - 1].data, sizeof(elliptic_curve256_scalar_t));
+        for (int j = (int)t - 2; j >= 0; --j)
+        {
+            REQUIRE(algebra->mul_scalars(algebra.get(), &acc, acc, sizeof(elliptic_curve256_scalar_t), id_be, sizeof(elliptic_curve256_scalar_t)) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+            REQUIRE(algebra->add_scalars(algebra.get(), &acc, acc, sizeof(elliptic_curve256_scalar_t), coeff[j].data, sizeof(elliptic_curve256_scalar_t)) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+        }
+        p.second.set(keyid, acc, metadata);
+    }
+}
+
 struct sign_thread_data
 {
     players_setup_info& players;
@@ -326,5 +424,89 @@ TEST_CASE("eddsa") {
         // run 4 times as R has 50% chance of being negative
         for (size_t i = 0; i < 8; ++i)
             eddsa_sign(players, keyid, 1, pubkey, chaincode, {path}, true, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);;
+    }
+}
+
+// Create a t-of-N Shamir/VSS threshold key over `all_ids`, then sign `count` block(s) with EVERY
+// signer subset of size `subset_size` (>= t), verifying each Ed25519 signature. This exercises
+// the threshold path of the online signer (the per-signer Lagrange weight, calc_w): for any
+// qualifying signer set, sum over signers of w_i * F(x_i) must equal F(0) = secret. subset_size
+// may exceed t (over-determined reconstruction) and ids need not be contiguous.
+static void threshold_sign_all_subsets(uint8_t t, const std::vector<uint64_t>& all_ids, size_t subset_size, uint32_t count, bool keccak)
+{
+    REQUIRE(subset_size >= t);
+    REQUIRE(subset_size <= all_ids.size());
+
+    char keyid[37] = {0};
+    uuid_t uid;
+    uuid_generate_random(uid);
+    uuid_unparse(uid, keyid);
+
+    threshold_players_info all_players;
+    for (auto id : all_ids)
+        all_players[id];
+    elliptic_curve256_point_t pubkey;
+    create_threshold_secret(all_players, keyid, t, pubkey);
+
+    byte_vector_t chaincode(32, '\0');
+    std::vector<uint32_t> path = {44, 0, 0, 0, 0};
+    std::vector<std::vector<uint32_t>> paths;
+    for (uint32_t i = 0; i < count; ++i)
+    {
+        paths.push_back(path);
+        ++path[2];
+    }
+
+    const size_t n = all_ids.size();
+    size_t subsets_tested = 0;
+    for (uint32_t mask = 0; mask < (1u << n); ++mask)
+    {
+        size_t bits = 0;
+        for (size_t b = 0; b < n; ++b)
+            if (mask & (1u << b))
+                ++bits;
+        if (bits != subset_size)
+            continue;
+
+        threshold_players_info signers;
+        for (size_t b = 0; b < n; ++b)
+            if (mask & (1u << b))
+                signers[all_ids[b]] = all_players[all_ids[b]];
+
+        eddsa_sign(signers, keyid, count, pubkey, chaincode, paths, keccak, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+        ++subsets_tested;
+    }
+    REQUIRE(subsets_tested > 0);
+}
+
+TEST_CASE("eddsa_threshold") {
+    SECTION("2-of-2") {
+        threshold_sign_all_subsets(2, {1, 2}, 2, 1, false);
+    }
+
+    SECTION("2-of-3 every signing pair") {
+        threshold_sign_all_subsets(2, {1, 2, 3}, 2, 1, false);
+    }
+
+    SECTION("2-of-3 over-determined (all 3 sign)") {
+        threshold_sign_all_subsets(2, {1, 2, 3}, 3, 1, false);
+    }
+
+    SECTION("3-of-5 every signing triple") {
+        threshold_sign_all_subsets(3, {1, 2, 3, 4, 5}, 3, 1, false);
+    }
+
+    SECTION("2-of-3 multiple blocks") {
+        threshold_sign_all_subsets(2, {1, 2, 3}, 2, 4, false);
+    }
+
+    SECTION("2-of-3 keccak") {
+        // R has ~50% chance of being negative; repeat to exercise both branches
+        for (int i = 0; i < 4; ++i)
+            threshold_sign_all_subsets(2, {1, 2, 3}, 2, 1, true);
+    }
+
+    SECTION("non-contiguous player ids") {
+        threshold_sign_all_subsets(2, {7, 42, 1000}, 2, 1, false);
     }
 }

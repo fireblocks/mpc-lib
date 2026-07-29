@@ -6,7 +6,6 @@
 #include "cosigner/mpc_globals.h"
 #include "logging/logging_t.h"
 #include "utils.h"
-#include "cosigner/mpc_globals.h"
 #include <openssl/sha.h>
 #include <openssl/crypto.h>
 #include <inttypes.h>

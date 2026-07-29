@@ -41,6 +41,25 @@ public:
                              const std::map<uint64_t, add_user_data>& data,
                              commitments_sha256_t& B);
 
+    // Source side of add-user / key-redistribute: re-split this server's stored
+    // share of key_id among new_player_ids, producing add_user_data the new
+    // players rebuild from (the client emits its own counterpart). Mirror of
+    // bam_ecdsa_cosigner_client::generate_add_user_share. Validates, same as the
+    // CMP source path: the stored key/metadata algorithm matches the request, the
+    // source key belongs to the current tenant, and the shared
+    // same_players_validation (add-user vs redistribute) - before producing
+    // shares. my_player_id is this server's id for the source key;
+    // new_player_id_to_modulus is provided by the caller (the service layer's
+    // new-players verification).
+    void generate_add_user_share(const std::string& key_id,
+                                 const std::string& new_key_id,
+                                 const cosigner_sign_algorithm algorithm,
+                                 const std::vector<uint64_t>& new_player_ids,
+                                 const std::map<uint64_t, std::string>& new_player_id_to_modulus,
+                                 uint64_t my_player_id,
+                                 bool is_redistribute_request,
+                                 add_user_data& data);
+
 
     // 2nd stage of key generation - verify client proofs and generate server decommitment
     void verify_client_proofs_and_decommit_share_with_proof(const std::string& key_id,

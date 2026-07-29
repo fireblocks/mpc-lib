@@ -24,6 +24,9 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
     case ECDSA_SECP256R1: return "ECDSA_SECP256R1";
     case EDDSA_ED25519: return "EDDSA_ED25519";
     case ECDSA_STARK: return "ECDSA_STARK";
+    case SCHNORR_SECP256K1: return "SCHNORR_SECP256K1";
+    case SCHNORR_SECP256R1: return "SCHNORR_SECP256R1";
+    case SCHNORR_STARK: return "SCHNORR_STARK";
     default:
         return "UNKNOWN";
     }
@@ -276,7 +279,10 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
         ed25519_le_scalar_t k;
         throw_cosigner_exception(ed25519_calc_hram(ed25519, &k, (const ed25519_point_t*)&data.sig_data[i].R.data, (const ed25519_point_t*)&derived_public_key, (const uint8_t*)data.sig_data[i].message.data(), data.sig_data[i].message.size(), data.sig_data[i].flags & EDDSA_KECCAK));
 
-        if (data.sig_data[i].path.size() && data.signers_ids.size() > 1)
+        // Additive (n-of-n) only: split the HD delta equally across signers. For threshold
+        // (Shamir/VSS-DKG) keys the per-share Lagrange weight (calc_w below) already sums to 1,
+        // so the delta must not be divided here.
+        if (data.sig_data[i].path.size() && data.signers_ids.size() > 1 && (metadata.flags & THRESHOLD) == 0)
         {
             elliptic_curve256_scalar_t inv = {0};
             inv[sizeof(elliptic_curve256_scalar_t) - 1] = (uint8_t)data.signers_ids.size();
@@ -285,6 +291,10 @@ uint64_t eddsa_online_signing_service::broadcast_si(const std::string& txid, con
         }
         memcpy(x.data, share.data, sizeof(elliptic_curve256_scalar_t));
         throw_cosigner_exception(ed25519_algebra_add_scalars(ed25519, &x.data, delta, sizeof(elliptic_curve256_scalar_t), x.data, sizeof(elliptic_curve256_scalar_t)));
+        // Threshold (Shamir/VSS-DKG) key: weight the share by its per-signer Lagrange
+        // coefficient so that sum over signers of w_i * F(x_i) == F(0).
+        if (metadata.flags & THRESHOLD)
+            calc_w(x, my_id, data.signers_ids);
         throw_cosigner_exception(ed25519_algebra_be_to_le(&x.data, &x.data));
         elliptic_curve_scalar s;
         throw_cosigner_exception(ed25519_algebra_mul_add(ed25519, &s.data, &k, &x.data, &data.sig_data[i].k.data));

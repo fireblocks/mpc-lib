@@ -250,6 +250,9 @@ elliptic_curve256_algebra_ctx_t* cmp_offline_refresh_service::get_algebra(cosign
     case ECDSA_SECP256R1: return _secp256r1.get();
     case EDDSA_ED25519: return _ed25519.get();
     case ECDSA_STARK: return _stark.get();
+    case SCHNORR_SECP256K1:
+    case SCHNORR_SECP256R1:
+    case SCHNORR_STARK:
     default:
         throw cosigner_exception(cosigner_exception::UNKNOWN_ALGORITHM);
     }

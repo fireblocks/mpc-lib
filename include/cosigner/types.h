@@ -138,6 +138,33 @@ struct player
     std::string type;
 };
 
+struct additive_add_user_data
+{
+    std::map<uint64_t, byte_vector_t> encrypted_shares;
+    elliptic_curve_point public_key;
+};
+
+struct two_party_generated_public_key
+{
+    std::string pub_key;
+    cosigner_sign_algorithm algorithm;
+};
+
+struct two_party_signature_metadata_header
+{
+    two_party_signature_metadata_header() = default;
+    two_party_signature_metadata_header(const uint32_t ver, const std::string& signature_key_id, const int64_t creation_time) :
+        version(ver),
+        key_id(signature_key_id),
+        timestamp(creation_time)
+    {
+    }
+
+    uint32_t version { 0 };          // not used for now and set to zero
+    std::string key_id;
+    int64_t timestamp { 0 };         // of creation
+};
+
 }
 }
 }

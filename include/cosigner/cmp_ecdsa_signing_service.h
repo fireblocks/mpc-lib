@@ -82,7 +82,8 @@ struct ecdsa_preprocessing_data
     byte_vector_t mta_request;
     std::map<uint64_t, byte_vector_t> G_proofs;
     std::map<uint64_t, ecdsa_signing_public_data> public_data;
-    ~ecdsa_preprocessing_data() {OPENSSL_cleanse(k.data, sizeof(ecdsa_preprocessing_data));}
+    // No explicit destructor needed: each elliptic_curve_scalar member cleanses its own
+    // data in ~elliptic_curve_scalar(), and the map/vector members destruct normally.
 };
 
 // this class holds the common functionality for cmp_ecdsa_online_signing_service and cmp_ecdsa_offline_signing_service

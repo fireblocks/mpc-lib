@@ -14,6 +14,9 @@ class setup_persistency : public fireblocks::common::cosigner::cmp_setup_service
 public:
     // debug only
     std::string dump_key(const std::string& key_id) const;
+    // test fixture only: preload a pre-existing (e.g. Shamir) key directly into the store, bypassing keygen
+    void preload_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key,
+                     const fireblocks::common::cosigner::cmp_key_metadata& metadata);
 private:
     bool key_exist(const std::string& key_id) const override;
     void load_key(const std::string& key_id, cosigner_sign_algorithm& algorithm, elliptic_curve256_scalar_t& private_key) const override;

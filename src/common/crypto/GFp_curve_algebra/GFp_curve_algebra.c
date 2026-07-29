@@ -918,8 +918,8 @@ static uint8_t point_size(const elliptic_curve256_algebra_ctx_t *ctx)
 static const elliptic_curve256_point_t *infinity_point(const struct elliptic_curve256_algebra_ctx *ctx)
 {
     (void)(ctx);
-    static const elliptic_curve256_point_t INFINITY = {0};
-    return &INFINITY;
+    static const elliptic_curve256_point_t INFINITY_POINT = {0};
+    return &INFINITY_POINT;
 }
 
 static elliptic_curve_algebra_status validate_non_infinity_point(const struct elliptic_curve256_algebra_ctx *ctx, const elliptic_curve256_point_t *p)

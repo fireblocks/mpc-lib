@@ -181,11 +181,23 @@ cmp_mta_deltas cmp_ecdsa_signing_service::verify_block_and_get_delta(
         }
         const_cast<std::map<uint64_t, byte_vector_t>&>(it->second.response[index].gamma_proofs).clear();
         pub.gamma_commitment.clear();
-        cmp_mta_message& gamma_mta = const_cast<cmp_mta_message&>(it->second.response[index].k_gamma_mta.at(my_id));
+        auto k_gamma_mta_it = it->second.response[index].k_gamma_mta.find(my_id);
+        if (k_gamma_mta_it == it->second.response[index].k_gamma_mta.end())
+        {
+            LOG_ERROR("Failed to verify gamma mta response from player %" PRIu64 " block %lu, response does not contain my id", it->first, index);
+            throw_cosigner_exception(ZKP_VERIFICATION_FAILED);
+        }
+        cmp_mta_message& gamma_mta = const_cast<cmp_mta_message&>(k_gamma_mta_it->second);
         verifiers.at(it->first)->process(data.mta_request, gamma_mta, pub.GAMMA);
         auto alpha = mta::decrypt_mta_response(it->first, algebra, std::move(gamma_mta.message), aux_keys.paillier);
         throw_cosigner_exception(algebra->add_scalars(algebra, &data.delta.data, data.delta.data, sizeof(elliptic_curve256_scalar_t), alpha.data, sizeof(elliptic_curve256_scalar_t)));
-        cmp_mta_message& x_mta = const_cast<cmp_mta_message&>(it->second.response[index].k_x_mta.at(my_id));
+        auto k_x_mta_it = it->second.response[index].k_x_mta.find(my_id);
+        if (k_x_mta_it == it->second.response[index].k_x_mta.end())
+        {
+            LOG_ERROR("Failed to verify x mta response from player %" PRIu64 " block %lu, response does not contain my id", it->first, index);
+            throw_cosigner_exception(ZKP_VERIFICATION_FAILED);
+        }
+        cmp_mta_message& x_mta = const_cast<cmp_mta_message&>(k_x_mta_it->second);
         verifiers.at(it->first)->process(data.mta_request, x_mta, other.public_share);
         alpha = mta::decrypt_mta_response(it->first, algebra, std::move(x_mta.message), aux_keys.paillier);
         throw_cosigner_exception(algebra->add_scalars(algebra, &data.chi.data, data.chi.data, sizeof(elliptic_curve256_scalar_t), alpha.data, sizeof(elliptic_curve256_scalar_t)));

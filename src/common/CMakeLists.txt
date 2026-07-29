@@ -32,6 +32,9 @@ set(COSIGNER_FILES
     cosigner/bam_ecdsa_cosigner_server.cpp
     cosigner/bam_ecdsa_cosigner.cpp
     cosigner/bam_key_persistency_structures.cpp
+    cosigner/frost_cosigner_client.cpp
+    cosigner/frost_cosigner_server.cpp
+    cosigner/frost_cosigner.cpp
     cosigner/cmp_ecdsa_offline_signing_service.cpp
     cosigner/cmp_ecdsa_online_signing_service.cpp
     cosigner/cmp_ecdsa_signing_service.cpp

@@ -63,7 +63,7 @@ A few examples for running a full signing process can be found in the [tests sec
 
 ## Security
 
-Please see our dedicated [security policy](SECURITY.md) page.
+Please see our dedicated [security policy](SECURITY.md), which also links to the [security model and submission contract](SECURITY-MODEL.md) and the [researcher and AI-tooling notes](CLAUDE.md).
 
 ## Contributing
 

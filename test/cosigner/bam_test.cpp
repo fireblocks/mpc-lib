@@ -384,6 +384,11 @@ public:
         // Stub for tests
     }
     
+    void fill_frost_signing_info_from_metadata(std::vector<fbc::frost_signing_properties>& info, const std::string& metadata) const override
+    {
+
+    }
+    
     void fill_bam_signing_info_from_metadata(std::vector<fbc::bam_signing_properties>& info, const std::string& metadata) const override
     {
         if (metadata != "")

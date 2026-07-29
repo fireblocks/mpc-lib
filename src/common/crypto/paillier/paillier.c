@@ -1716,7 +1716,8 @@ long paillier_mul(const paillier_public_key_t *key,
     {
         goto cleanup;
     }
-    
+    BN_set_flags(bn_b, BN_FLG_CONSTTIME);
+
     // verify that a_ciphertext and n are coprime
     if (is_coprime_fast(bn_a, key->n, ctx) != 1)
     {

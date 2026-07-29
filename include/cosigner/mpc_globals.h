@@ -21,6 +21,7 @@ constexpr int MPC_REDISTRIBUTE_KEY                              = 10;
 constexpr int MPC_EXTENDED_MTA                                  = 11;
 constexpr int MPC_BAM_ECDSA_BETA                                = 12;
 constexpr int MPC_BAM_ECDSA                                     = 13;
+constexpr int MPC_FROST                                         = 14;
 
 constexpr int MPC_PROTOCOL_VERSION                              = MPC_BAM_ECDSA;
 
