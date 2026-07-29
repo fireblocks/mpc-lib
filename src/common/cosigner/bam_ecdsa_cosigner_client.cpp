@@ -11,6 +11,8 @@
 #include "crypto/GFp_curve_algebra/GFp_curve_algebra.h"
 #include "bam_well_formed_proof.h"
 #include "cosigner_bn.h"
+#include "cosigner/mpc_globals.h"
+#include "utils.h"
 
 #include "logging/logging_t.h"
 #include <cinttypes>
@@ -57,13 +59,39 @@ void bam_ecdsa_cosigner_client::start_add_user(const std::string& setup_id,
     elliptic_curve_scalar private_share;
     elliptic_curve256_point_t expected_public_key;
     
-    decrypt_and_rebuild_private_share(client_id, algorithm, data, private_share, expected_public_key);
+    elliptic_curve256_algebra_ctx_t* algebra = get_algebra(algorithm);
+    decrypt_and_rebuild_private_share(client_id, algebra, _platform_service, data, /*destination_n=*/2, private_share, expected_public_key);
+
+    if (is_zero_scalar(private_share.data))
+    {
+        LOG_FATAL("Secret share reconstructed is zero for key %s, server_id %" PRIu64 ", client_id %" PRIu64, key_id.c_str(), server_id, client_id);
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    check_a_valid_point(expected_public_key, algebra);
 
     start_key_generation(setup_id, key_id, tenant_id, server_id, client_id, algorithm, private_share, expected_public_key);
 }
 
+void bam_ecdsa_cosigner_client::generate_add_user_share(const std::string& key_id,
+                                                        const std::string& new_key_id,
+                                                        const cosigner_sign_algorithm algorithm,
+                                                        const std::vector<uint64_t>& new_player_ids,
+                                                        const std::map<uint64_t, std::string>& new_player_id_to_modulus,
+                                                        const uint64_t my_player_id,
+                                                        const bool is_redistribute_request,
+                                                        add_user_data& data)
+{
+    bam_key_metadata_client key_metadata;
+    _key_persistency.load_key_metadata(key_id, key_metadata);
 
-void bam_ecdsa_cosigner_client::start_key_generation(const std::string& setup_id, 
+    bam_ecdsa_cosigner::generate_add_user_share(key_metadata, key_id, new_key_id, algorithm,
+                                                new_player_ids, new_player_id_to_modulus, my_player_id,
+                                                is_redistribute_request, _key_persistency, data);
+}
+
+
+void bam_ecdsa_cosigner_client::start_key_generation(const std::string& setup_id,
                                                      const std::string& key_id, 
                                                      const std::string& tenant_id,
                                                      const uint64_t server_id,
@@ -501,7 +529,13 @@ void bam_ecdsa_cosigner_client::prepare_for_signature(const std::string& key_id,
         throw cosigner_exception(cosigner_exception::INTERNAL_ERROR);
     }
 
-    const auto signature_request_data = fill_bam_signing_info_from_metadata(metadata_json, static_cast<uint32_t>(data.blocks.size()));
+    size_t blocks = data.blocks.size();
+    if (blocks > MAX_BLOCKS_TO_SIGN)
+    {
+        LOG_ERROR("got too many blocks to sign %lu", blocks);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+    const auto signature_request_data = fill_bam_signing_info_from_metadata(metadata_json, static_cast<uint32_t>(blocks));
     if (0 == signature_request_data.size())
     {
         LOG_ERROR("Key %s, tx_id %s: Empty signature batch request", key_id.c_str(), tx_id.c_str());

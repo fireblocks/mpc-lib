@@ -837,9 +837,9 @@ static inline long init_paillier_blum_zkp(zkp_paillier_blum_modulus_proof_t *pro
 
 // serialization format is sizeof(pub->n) || w || (x || z || a || b) * PAILLIER_BLUM_STATISTICAL_SECURITY  if serialize_all_nth_roots is true
 // and sizeof(pub->n) || w || (x || z || a || b) * MINIMUM_NUMBER_OF_NTH_ROOTS + (x || a || b) * (PAILLIER_BLUM_STATISTICAL_SECURITY - MINIMUM_NUMBER_OF_NTH_ROOTS)  otherwise
-static inline uint32_t paillier_blum_zkp_serialized_size(const paillier_public_key_t *pub, const uint8_t use_all_nth_roots)
+static inline uint64_t paillier_blum_zkp_serialized_size(const paillier_public_key_t *pub, const uint8_t use_all_nth_roots)
 {
-    int n_len = BN_num_bytes(pub->n);
+    uint64_t n_len = (uint64_t)BN_num_bytes(pub->n);
     return sizeof(uint32_t) +
           n_len +
           (n_len + sizeof(uint8_t) * 2) * PAILLIER_BLUM_STATISTICAL_SECURITY +
@@ -982,7 +982,10 @@ long paillier_generate_paillier_blum_zkp(const paillier_private_key_t *priv,
 
     //assume that (BN_mod_word(priv->p, 8) == 3 && BN_mod_word(priv->q, 8) == 7)
 
-    needed_proof_len = paillier_blum_zkp_serialized_size(&priv->pub, !!compute_all_nth_roots);
+    uint64_t needed_proof_len_64 = paillier_blum_zkp_serialized_size(&priv->pub, !!compute_all_nth_roots);
+    if (needed_proof_len_64 > UINT32_MAX)
+        return PAILLIER_ERROR_INVALID_KEY;
+    needed_proof_len = (uint32_t)needed_proof_len_64;
     if (proof_real_len)
     {
         *proof_real_len = needed_proof_len;

@@ -324,18 +324,24 @@ void cmp_ecdsa_offline_signing_service::ecdsa_sign(const std::string& key_id, co
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
-    std::vector<uint32_t> flags(data.blocks.size(), 0);
+    size_t blocks = data.blocks.size();
+    if (blocks > MAX_BLOCKS_TO_SIGN)
+    {
+        LOG_ERROR("got too many blocks to sign %lu", blocks);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+    std::vector<uint32_t> flags(blocks, 0);
     _service.fill_signing_info_from_metadata(metadata_json, flags);
 
-    if (flags.size() != data.blocks.size())
+    if (flags.size() != blocks)
     {
-        LOG_ERROR("sig info size %lu is different from number of blocks to sign %lu", flags.size(), data.blocks.size());
+        LOG_ERROR("sig info size %lu is different from number of blocks to sign %lu", flags.size(), blocks);
         throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     auto algebra = get_algebra(algo);
     GFp_curve_algebra_ctx_t* curve = (GFp_curve_algebra_ctx_t*)algebra->ctx;
-    for (size_t i = 0; i < data.blocks.size(); i++)
+    for (size_t i = 0; i < blocks; i++)
     {
         if (sizeof(elliptic_curve256_scalar_t) != data.blocks[i].data.size())
         {

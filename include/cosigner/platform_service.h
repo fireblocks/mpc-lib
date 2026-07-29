@@ -17,6 +17,7 @@ struct auxiliary_keys;
 struct signing_data;
 struct eddsa_signature_data;
 struct bam_signing_properties;
+struct frost_signing_properties;
 
 class COSIGNER_EXPORT platform_service
 {
@@ -52,6 +53,7 @@ public:
     virtual void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const = 0;
     virtual void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const = 0;
     virtual void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const = 0;
+    virtual void fill_frost_signing_info_from_metadata(std::vector<frost_signing_properties>& info, const std::string& metadata) const = 0;
     // derive a key share from a master seed defined by derive_from
     virtual void derive_initial_share(const share_derivation_args& derive_from, cosigner_sign_algorithm algorithm, elliptic_curve256_scalar_t* key) const = 0;
 

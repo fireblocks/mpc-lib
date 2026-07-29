@@ -19,6 +19,7 @@ struct bignum_ctx; //for BN_CTX
 namespace fireblocks::common::cosigner
 {
 struct bam_single_signature_data_base;
+struct bam_key_metadata_base;
 class platform_service;
 
 struct bam_signing_properties
@@ -171,11 +172,7 @@ public:
     };
     
 
-    struct generated_public_key
-    {
-        std::string pub_key;
-        cosigner_sign_algorithm algorithm;
-    };
+    using generated_public_key = two_party_generated_public_key;
     
     static  bool is_positive(const cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& n);
     static inline bool is_odd_point(const elliptic_curve256_point_t& p)
@@ -185,11 +182,7 @@ public:
 
     static void make_sig_s_positive(const cosigner_sign_algorithm algorithm, const elliptic_curve256_algebra_ctx_t* algebra, recoverable_signature& sig);
     
-    struct add_user_data
-    {
-        std::map<uint64_t, byte_vector_t> encrypted_shares;
-        elliptic_curve_point public_key;
-    };
+    using add_user_data = additive_add_user_data;
 
 
 protected:
@@ -208,6 +201,7 @@ protected:
                                         const elliptic_curve256_point_t& public_key, 
                                         commitments_sha256_t& B);
 
+    static bool is_zero_scalar(const elliptic_curve256_scalar_t& s);
     byte_vector_t generate_setup_aad_bytes(const std::string& setup_id, const cosigner_sign_algorithm algorithm) const;
     static void generate_aad_for_key_gen(const std::string& key_id, const uint64_t client_id, const uint64_t server_id, commitments_sha256_t& key_aad);
     static void generate_aad_for_signature(const std::string& key_id, const uint64_t server_id, const uint64_t client_id, const std::string& tx_id, commitments_sha256_t& signature_add);
@@ -249,11 +243,6 @@ protected:
     }
 
     void generate_private_share(const cosigner_sign_algorithm algorithm, elliptic_curve_scalar& private_share) const;
-    void decrypt_and_rebuild_private_share(const uint64_t my_player_id, 
-                           const cosigner_sign_algorithm algorithm, 
-                           const std::map<uint64_t, add_user_data>& data, 
-                           elliptic_curve_scalar& private_share,
-                           elliptic_curve256_point_t& expected_public_key) const;
 
 
 
@@ -262,6 +251,24 @@ protected:
     
     void validate_current_tenant_id(const std::string& tenant_id) const;
     void validate_tenant_id_setup(bam_key_persistency_common& persistency, const std::string& setup_id) const;
+
+    // Shared source-side add-user / key-redistribute producer for both 2-party
+    // roles: the client/server wrappers load their concrete metadata type and
+    // delegate here. All request validations - metadata algorithm, tenant and
+    // the add-user vs redistribute player rule - run BEFORE the secret share is
+    // loaded, so a bad request is rejected without touching sensitive material.
+    // (key_persistency and data are trailing non-const outputs per the header
+    // param convention; core keeps key_persistency first.)
+    void generate_add_user_share(const bam_key_metadata_base& key_metadata,
+                                 const std::string& key_id,
+                                 const std::string& new_key_id,
+                                 cosigner_sign_algorithm algorithm,
+                                 const std::vector<uint64_t>& new_player_ids,
+                                 const std::map<uint64_t, std::string>& new_player_id_to_modulus,
+                                 uint64_t my_player_id,
+                                 bool is_redistribute_request,
+                                 bam_key_persistency_common& key_persistency,
+                                 add_user_data& data);
 
     template <class persistency_t, class key_metadata_t>
     cosigner_sign_algorithm get_public_key(const std::string& key_id, byte_vector_t& public_key, persistency_t& key_persistency)

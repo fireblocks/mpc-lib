@@ -3,9 +3,11 @@
 #include "cosigner/mpc_globals.h"
 #include "utils.h"
 #include "utils/string_utils.h"
+#include "cosigner_bn.h"
 #include "crypto/zero_knowledge_proof/schnorr.h"
 #include "logging/logging_t.h"
 
+#include <openssl/bn.h>
 #include <openssl/sha.h>
 #include <openssl/crypto.h>
 #include <algorithm>
@@ -39,6 +41,9 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
     case ECDSA_SECP256R1: return "ECDSA_SECP256R1";
     case EDDSA_ED25519: return "EDDSA_ED25519";
     case ECDSA_STARK: return "ECDSA_STARK";
+    case SCHNORR_SECP256K1: return "SCHNORR_SECP256K1";
+    case SCHNORR_SECP256R1: return "SCHNORR_SECP256R1";
+    case SCHNORR_STARK: return "SCHNORR_STARK";
     default:
         return "UNKNOWN";
     }
@@ -186,6 +191,11 @@ void cmp_setup_service::generate_setup_proofs(const std::string& key_id, const s
     for (auto i = decommitments.begin(); i != decommitments.end(); ++i)
     {
         xor_seed(metadata.seed, i->second.seed);
+        if (temp_data.players_schnorr_R.find(i->first) != temp_data.players_schnorr_R.end())
+        {
+            LOG_ERROR("Player %" PRIu64 " already commited to R", i->first);
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        }
         temp_data.players_schnorr_R[i->first] = i->second.share.schnorr_R;
     }
 
@@ -507,7 +517,161 @@ void cmp_setup_service::add_user(const std::string& tenant_id, const std::string
     generate_setup_commitments(key_id, tenant_id, algorithm, algebra, players_ids, t, ttl, key.data, &pubkey, setup_commitment);
 }
 
-void cmp_setup_service::generate_setup_commitments(const std::string& key_id, 
+// lagrange basis polynomial evaluated at 0 for my_id over players_ids: prod(other_id / (other_id - my_id)) mod curve order
+static void lagrange_coef_at_zero(const elliptic_curve256_algebra_ctx_t* algebra, uint64_t my_id, const std::set<uint64_t>& players_ids, elliptic_curve256_scalar_t& coef)
+{
+    BN_CTX_guard ctx_guard;
+    BN_CTX* ctx = ctx_guard.get();
+    BIGNUM* product = BN_CTX_get(ctx);
+    BIGNUM* bn_my_id = BN_CTX_get(ctx);
+    BIGNUM* bn_other_id = BN_CTX_get(ctx);
+    BIGNUM* tmp = BN_CTX_get(ctx);
+    const BIGNUM* field = algebra->order_internal(algebra);
+    if (!product || !bn_my_id || !bn_other_id || !tmp || !field)
+        throw_cosigner_exception(cosigner_exception::NO_MEM);
+    bignum_cleaner product_cleaner(product);
+    bignum_cleaner tmp_cleaner(tmp);
+
+    BN_set_flags(product, BN_FLG_CONSTTIME);
+    BN_set_flags(tmp, BN_FLG_CONSTTIME);
+
+    if (!BN_set_word(bn_my_id, my_id) || !BN_one(product))
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+
+    for (uint64_t other_id : players_ids)
+    {
+        if (other_id == my_id)
+            continue;
+        if (!BN_set_word(bn_other_id, other_id))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        if (!BN_mod_sub_quick(tmp, bn_other_id, bn_my_id, field))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        if (!BN_mod_inverse(tmp, tmp, field, ctx))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        if (!BN_mod_mul(tmp, tmp, bn_other_id, field, ctx))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+        if (!BN_mod_mul(product, product, tmp, field, ctx))
+            throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+    }
+
+    if (BN_bn2binpad(product, coef, sizeof(elliptic_curve256_scalar_t)) <= 0)
+        throw_cosigner_exception(cosigner_exception::INTERNAL_ERROR);
+}
+
+void cmp_setup_service::upgrade_key_to_cmp(const std::string& tenant_id, const std::string& key_id, cosigner_sign_algorithm algorithm, const std::string& new_key_id,
+    const std::vector<uint64_t>& players_ids, const std::vector<uint64_t>& new_players_ids, commitment& setup_commitment)
+{
+    if (tenant_id.compare(_key_persistency.get_tenantid_from_keyid(key_id)) != 0)
+    {
+        LOG_ERROR("key id %s is not part of tenant %s", key_id.c_str(), tenant_id.c_str());
+        throw_cosigner_exception(cosigner_exception::UNAUTHORIZED);
+    }
+
+    if (!_key_persistency.key_exist(key_id))
+    {
+        LOG_ERROR("key id %s doesn't exists", key_id.c_str());
+        throw_cosigner_exception(cosigner_exception::BAD_KEY);
+    }
+
+    if (_key_persistency.key_exist(new_key_id))
+    {
+        LOG_ERROR("key id %s already exists", new_key_id.c_str());
+        throw_cosigner_exception(cosigner_exception::BAD_KEY);
+    }
+
+    if (algorithm != ECDSA_SECP256K1)
+    {
+        LOG_ERROR("upgrade to cmp is only supported for ECDSA SECP256k1, but the request is for algorithm %s", to_string(algorithm));
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    cmp_key_metadata metadata;
+    _key_persistency.load_key_metadata(key_id, metadata, false);
+
+    if (metadata.algorithm != algorithm)
+    {
+        LOG_ERROR("key %s has algorithm %s, but the request is for algorithm %s", key_id.c_str(), to_string(metadata.algorithm), to_string(algorithm));
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    if (players_ids.size() != metadata.players_info.size())
+    {
+        LOG_ERROR("key %s was created with %lu players, but the request is for %lu players", key_id.c_str(), metadata.players_info.size(), players_ids.size());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    std::set<uint64_t> new_players(new_players_ids.begin(), new_players_ids.end());
+    if (new_players.size() != new_players_ids.size())
+    {
+        LOG_ERROR("Received key upgrade request with duplicated new player id, players_ids size %lu but only %lu unique ones", new_players_ids.size(), new_players.size());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+    if (new_players.size() != metadata.players_info.size())
+    {
+        LOG_ERROR("key %s was created with %lu players, but the new key is for %lu players", key_id.c_str(), metadata.players_info.size(), new_players_ids.size());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    std::set<uint64_t> old_players_ids;
+    for (auto i = metadata.players_info.begin(); i != metadata.players_info.end(); ++i)
+        old_players_ids.insert(i->first);
+
+    std::set<uint64_t> distinct_players_ids(players_ids.begin(), players_ids.end());
+    for (auto i = old_players_ids.begin(); i != old_players_ids.end(); ++i)
+        if (distinct_players_ids.find(*i) == distinct_players_ids.end())
+        {
+            LOG_ERROR("player %" PRIu64 " is part of key %s but missing from request", *i, key_id.c_str());
+            throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+        }
+
+    // Only a threshold (Shamir/VSS) key can be converted to an additive CMP share via a Lagrange
+    // weight; an already-additive key (flags == 0) is nonsensical to upgrade and would otherwise
+    // fail late in setup round 3 after wastefully generating fresh Paillier/ring-Pedersen keys.
+    if ((metadata.flags & THRESHOLD) == 0)
+    {
+        LOG_ERROR("key %s is not a threshold key, only threshold keys can be upgraded to CMP", key_id.c_str());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    // The threshold key must be full (t == n): every player contributes a Lagrange-weighted share,
+    // so a t < n key would mint a contradictory additive CMP key whose shares cannot reconstruct the
+    // secret and therefore cannot produce a valid signature.
+    if (metadata.t != metadata.n)
+    {
+        LOG_ERROR("key %s is a %d-of-%d key, only full (t == n) threshold keys can be upgraded to CMP", key_id.c_str(), metadata.t, metadata.n);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    auto algebra = get_algebra(algorithm);
+
+    // The source public key must be set and valid: an unset (infinity) public key would silently
+    // disable the round-3 public-key preservation check (see verify_setup_proofs), removing the
+    // invariant that guarantees the upgraded CMP key keeps the original public key.
+    if (algebra->validate_non_infinity_point(algebra, &metadata.public_key) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
+    {
+        LOG_ERROR("key %s has an unset or invalid public key and cannot be upgraded to CMP", key_id.c_str());
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    LOG_INFO("Upgrading key %s to CMP with new key id %s", key_id.c_str(), new_key_id.c_str());
+    const uint64_t my_id = _service.get_id_from_keyid(key_id);
+
+    // convert this player's shamir/threshold share to an additive one: new_share = lagrange_coef * share.
+    // all existing players participate, so the additive shares sum to the original secret and the
+    // public key is preserved (passed through to the new key's metadata below).
+    elliptic_curve_scalar new_share;
+    lagrange_coef_at_zero(algebra, my_id, old_players_ids, new_share.data);
+    {
+        elliptic_curve_scalar old_share;
+        cosigner_sign_algorithm algo;
+        _key_persistency.load_key(key_id, algo, old_share.data);
+        throw_cosigner_exception(algebra->mul_scalars(algebra, &new_share.data, new_share.data, sizeof(elliptic_curve256_scalar_t), old_share.data, sizeof(elliptic_curve256_scalar_t)));
+    }
+
+    generate_setup_commitments(new_key_id, tenant_id, algorithm, algebra, new_players_ids, metadata.t, metadata.ttl, new_share.data, &metadata.public_key, setup_commitment);
+}
+
+void cmp_setup_service::generate_setup_commitments(const std::string& key_id,
                                                            const std::string& tenant_id, 
                                                            cosigner_sign_algorithm algorithm, 
                                                            const elliptic_curve256_algebra_ctx_t* algebra, 
@@ -847,6 +1011,9 @@ elliptic_curve256_algebra_ctx_t* cmp_setup_service::get_algebra(cosigner_sign_al
     case ECDSA_SECP256R1: return _secp256r1.get();
     case EDDSA_ED25519: return _ed25519.get();
     case ECDSA_STARK: return _stark.get();
+    case SCHNORR_SECP256K1:
+    case SCHNORR_SECP256R1:
+    case SCHNORR_STARK:
     default:
         throw_cosigner_exception(cosigner_exception::UNKNOWN_ALGORITHM);
     }

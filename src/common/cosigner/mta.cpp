@@ -286,25 +286,25 @@ static inline void deserialize_mta_range_zkp(std::vector<uint8_t> buff, const ri
         throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
     ptr += sizeof(uint32_t);
-    if (!BN_bin2bn(ptr, paillier_pub_n_size * 2, proof.A))
+    if (!BN_bin2bn(ptr, paillier_priv_n_size * 2, proof.A))
     {
         throw_cosigner_exception(cosigner_exception::NO_MEM);
     }
-    ptr += paillier_pub_n_size * 2;
-    if (static_cast<uint32_t>(BN_num_bytes(proof.A)) < paillier_pub_n_size * 2 - EPSILON_BYTES)
+    ptr += paillier_priv_n_size * 2;
+    if (static_cast<uint32_t>(BN_num_bytes(proof.A)) < paillier_priv_n_size * 2 - EPSILON_BYTES)
     {
-        LOG_ERROR("Proof A too small. Expected to be at %u >= %u", static_cast<uint32_t>(BN_num_bytes(proof.A)), paillier_pub_n_size * 2 - EPSILON_BYTES);
+        LOG_ERROR("Proof A too small. Expected to be at %u >= %u", static_cast<uint32_t>(BN_num_bytes(proof.A)), paillier_priv_n_size * 2 - EPSILON_BYTES);
         throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
 
     memcpy(proof.Bx, ptr, sizeof(elliptic_curve256_point_t));
     ptr += sizeof(elliptic_curve256_point_t);
 
-    if (!BN_bin2bn(ptr, paillier_priv_n_size * 2, proof.By))
+    if (!BN_bin2bn(ptr, paillier_pub_n_size * 2, proof.By))
     {
         throw_cosigner_exception(cosigner_exception::NO_MEM);
     }
-    ptr += paillier_priv_n_size * 2;
+    ptr += paillier_pub_n_size * 2;
     if (static_cast<uint32_t>(BN_num_bytes(proof.By)) < paillier_pub_n_size * 2 - EPSILON_BYTES)
     {
         LOG_ERROR("Proof By too small. Expected to be at %u >= %u", static_cast<uint32_t>(BN_num_bytes(proof.By)), paillier_pub_n_size * 2 - EPSILON_BYTES);
@@ -379,13 +379,13 @@ static inline void deserialize_mta_range_zkp(std::vector<uint8_t> buff, const ri
     }
     ptr += MTA_ZKP_EPSILON_SIZE + sizeof(elliptic_curve256_scalar_t) + BN_num_bytes(ring_pedersen->n) + 1;
 
-    if (!BN_bin2bn(ptr, paillier_pub_n_size, proof.w))
+    if (!BN_bin2bn(ptr, paillier_priv_n_size, proof.w))
     {
         throw_cosigner_exception(cosigner_exception::NO_MEM);
     }
-    ptr += paillier_pub_n_size;
+    ptr += paillier_priv_n_size;
 
-    if (!BN_bin2bn(ptr, paillier_priv_n_size, proof.wy))
+    if (!BN_bin2bn(ptr, paillier_pub_n_size, proof.wy))
     {
         throw_cosigner_exception(cosigner_exception::NO_MEM);
     }

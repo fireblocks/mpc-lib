@@ -37,7 +37,24 @@ public:
                         const cosigner_sign_algorithm algorithm,
                         const std::map<uint64_t, add_user_data>& data);
 
-    
+    // Source side of add-user / key-redistribute: re-split this client's stored
+    // share of key_id among new_player_ids. Mirror of the server's
+    // generate_add_user_share. Validates, same as the CMP source path: the stored
+    // key/metadata algorithm matches the request, the source key belongs to the
+    // current tenant, and the shared same_players_validation (add-user vs
+    // redistribute) - before producing shares. my_player_id is this client's id
+    // for the source key; new_player_id_to_modulus is provided by the caller (the
+    // service layer's new-players verification).
+    void generate_add_user_share(const std::string& key_id,
+                                 const std::string& new_key_id,
+                                 const cosigner_sign_algorithm algorithm,
+                                 const std::vector<uint64_t>& new_player_ids,
+                                 const std::map<uint64_t, std::string>& new_player_id_to_modulus,
+                                 uint64_t my_player_id,
+                                 bool is_redistribute_request,
+                                 add_user_data& data);
+
+
     // Receives server proofs and finalizes key generation
     // 1. setup completion function. Receives server generated setup data and verifies it.
     //      it was decided that the client setup verification is always done a part of the key generation

@@ -78,6 +78,10 @@ private:
             info[0].flags = POSITIVE_R;
         }
     }
+    virtual void fill_frost_signing_info_from_metadata(std::vector<frost_signing_properties>& info, const std::string& metadata) const override
+    {
+
+    }
     bool is_client_id(uint64_t player_id) const override {return false;}
     void mark_key_setup_in_progress(const std::string& key_id) const override {}
     void clear_key_setup_in_progress(const std::string& key_id) const override {}

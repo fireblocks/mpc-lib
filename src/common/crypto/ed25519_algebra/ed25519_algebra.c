@@ -805,8 +805,8 @@ static uint8_t ed25519_point_size(const elliptic_curve256_algebra_ctx_t *ctx)
 static const elliptic_curve256_point_t *infinity_point(const struct elliptic_curve256_algebra_ctx *ctx)
 {
     (void)(ctx);
-    static const elliptic_curve256_point_t INFINITY = {1, 0};
-    return &INFINITY;
+    static const elliptic_curve256_point_t INFINITY_POINT = {1, 0};
+    return &INFINITY_POINT;
 }
 
 static inline int ed25519_is_infinity_compat(const elliptic_curve256_point_t *p)
@@ -821,7 +821,7 @@ static inline int ed25519_is_infinity_compat(const elliptic_curve256_point_t *p)
      * parser. Therefore we must treat any value in the tail byte as still
      * representing infinity as long as the first 32 bytes encode the identity.
      */
-    /* We intentionally do NOT reuse the 33-byte `elliptic_curve256_point_t INFINITY = {1,0}` here:
+    /* We intentionally do NOT reuse the 33-byte `elliptic_curve256_point_t INFINITY_POINT = {1,0}` here:
      * comparing 33 bytes would incorrectly reject valid "infinity" encodings where the tail byte is non-zero,
      * which are still treated as infinity by all Ed25519 operations in this file (they ignore the tail byte). */
     static const uint8_t ED25519_INFINITY_COMPRESSED[ED25519_COMPRESSED_POINT_LEN] = {1, 0};

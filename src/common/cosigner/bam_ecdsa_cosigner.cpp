@@ -12,6 +12,7 @@
 #include "cosigner/bam_key_persistency_structures.h"
 #include "cosigner/bam_tx_persistency_structures.h"
 #include "cosigner_bn.h"
+#include "utils.h"
 
 namespace fireblocks::common::cosigner
 {
@@ -31,6 +32,15 @@ bam_ecdsa_cosigner::bam_ecdsa_cosigner(platform_service& platform_service) :
     {
         throw cosigner_exception(cosigner_exception::NO_MEM);
     }
+}
+
+bool bam_ecdsa_cosigner::is_zero_scalar(const elliptic_curve256_scalar_t& s)
+{
+    const uint64_t *p = reinterpret_cast<const uint64_t*>(s);
+    uint64_t acc = 0;
+    for (size_t i = 0; i < sizeof(elliptic_curve256_scalar_t) / sizeof(uint64_t); ++i)
+        acc |= p[i];
+    return acc == 0;
 }
 
 std::vector<bam_signing_properties> bam_ecdsa_cosigner::fill_bam_signing_info_from_metadata(const std::string& metadata, const uint32_t blocks_num)
@@ -164,6 +174,56 @@ void bam_ecdsa_cosigner::validate_tenant_id_setup(bam_key_persistency_common& pe
 }
 
 
+void bam_ecdsa_cosigner::generate_add_user_share(const bam_key_metadata_base& key_metadata,
+                                                 const std::string& key_id,
+                                                 const std::string& new_key_id,
+                                                 const cosigner_sign_algorithm algorithm,
+                                                 const std::vector<uint64_t>& new_player_ids,
+                                                 const std::map<uint64_t, std::string>& new_player_id_to_modulus,
+                                                 const uint64_t my_player_id,
+                                                 const bool is_redistribute_request,
+                                                 bam_key_persistency_common& key_persistency,
+                                                 add_user_data& data)
+{
+    LOG_INFO("Generating add-user shares for key %s, algorithm %d, %zu new players",
+             key_id.c_str(), algorithm, new_player_ids.size());
+
+    if (key_metadata.algorithm != algorithm)
+    {
+        LOG_ERROR("key %s metadata has algorithm %d, but the request is for algorithm %d", key_id.c_str(), key_metadata.algorithm, algorithm);
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    // The source key must belong to the current (session) tenant, same as every
+    // other BAM key operation (CMP parity: verify_tenant_id).
+    validate_tenant_id_setup(key_persistency, key_metadata.setup_id);
+
+    // Enforce the shared add-user vs redistribute player rule (same helper as CMP).
+    // BAM is 2-party: the source key's players are this party and its peer (peer_id).
+    const std::set<uint64_t> old_players_ids { my_player_id, key_metadata.peer_id };
+    same_players_validation(old_players_ids, new_player_ids, is_redistribute_request, key_id, new_key_id);
+
+    // All request validations passed - only now load the secret share.
+    elliptic_curve_scalar my_share;
+    cosigner_sign_algorithm stored_algorithm;
+    key_persistency.load_key(key_id, stored_algorithm, my_share.data);
+
+    if (stored_algorithm != algorithm)
+    {
+        LOG_ERROR("key %s has algorithm %d, but the request is for algorithm %d", key_id.c_str(), stored_algorithm, algorithm);
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    if (is_zero_scalar(my_share.data))
+    {
+        LOG_FATAL("Loaded secret share is zero for key %s", key_id.c_str());
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    build_additive_add_user_data(get_algebra(algorithm), _platform_service, my_share, key_metadata.public_key, new_player_ids, new_player_id_to_modulus, data);
+}
+
+
 void bam_ecdsa_cosigner::make_sig_s_positive(const cosigner_sign_algorithm algorithm, const elliptic_curve256_algebra_ctx_t* algebra, recoverable_signature& sig)
 {
     // calling is_positive as optimization for not calling GFp_curve_algebra_abs unless needed
@@ -181,17 +241,20 @@ bool bam_ecdsa_cosigner::is_positive(const cosigner_sign_algorithm algorithm, co
     switch (algorithm)
     {
         case ECDSA_SECP256K1:  return (n[0] & 0x80) == 0;
-        
+
         case ECDSA_SECP256R1:
         {
             static constexpr const uint64_t half_n_first_8_bytes_le = 0x7FFFFFFF80000000ULL;
-            const uint64_t n_val = bswap_64(*reinterpret_cast<const uint64_t*>(&n)); //convert highest 64 bits big endian to little endian 
+            const uint64_t n_val = bswap_64(*reinterpret_cast<const uint64_t*>(&n)); //convert highest 64 bits big endian to little endian
             return n_val < half_n_first_8_bytes_le;
         }
-        
+
         case ECDSA_STARK: return n[0] < 4; // stark curve is 252bit
 
         case EDDSA_ED25519: //fallthrough to default
+        case SCHNORR_SECP256K1: //fallthrough to default
+        case SCHNORR_SECP256R1: //fallthrough to default
+        case SCHNORR_STARK: //fallthrough to default
         default:
             throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
     }
@@ -284,51 +347,6 @@ void bam_ecdsa_cosigner::generate_private_share(const cosigner_sign_algorithm al
 {
     const auto algebra = get_algebra(algorithm);
     throw_cosigner_exception(algebra->rand(algebra, &private_share.data));
-}
-
-void bam_ecdsa_cosigner::decrypt_and_rebuild_private_share(const uint64_t my_player_id,
-                                                           const cosigner_sign_algorithm algorithm, 
-                                                           const std::map<uint64_t, add_user_data>& data, 
-                                                           elliptic_curve_scalar& private_share,
-                                                           elliptic_curve256_point_t& expected_public_key) const
-{
-    const auto algebra = get_algebra(algorithm);
-    OPENSSL_cleanse(private_share.data, sizeof(private_share.data));
-    if (data.size() == 0)
-    {
-        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
-    }
-
-    bool is_first = true;
-    // perform validations
-    for (const auto& src_player_data : data)
-    {
-        if (is_first)
-        {
-            is_first = false;
-            memcpy(&expected_public_key[0], &src_player_data.second.public_key.data[0], sizeof(elliptic_curve256_point_t));
-        }
-        else if (memcmp(&expected_public_key[0], &src_player_data.second.public_key.data[0], sizeof(elliptic_curve256_point_t)) != 0)
-        {
-            LOG_ERROR("Public key from player %" PRIu64 " is different from the key sent by player %" PRIu64, src_player_data.first, data.begin()->first);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
-        }
-        else if (src_player_data.second.encrypted_shares.size() != 2)
-        {
-            LOG_ERROR("Incorrect encrypted shares size %u from player %" PRIu64, (uint32_t) src_player_data.second.encrypted_shares.size(), src_player_data.first);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
-        }
-        
-        const auto my_encrypted_share = src_player_data.second.encrypted_shares.find(my_player_id);
-        if (my_encrypted_share == src_player_data.second.encrypted_shares.end())
-        {
-            LOG_ERROR("Player %" PRIu64 " didn't send share to me", src_player_data.first);
-            throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
-        }
-
-        auto share = _platform_service.decrypt_message(my_encrypted_share->second);
-        throw_cosigner_exception(algebra->add_scalars(algebra, &private_share.data, &private_share.data[0], sizeof(elliptic_curve256_scalar_t), (const uint8_t*)share.data(), share.size()));
-    }
 }
 
  void bam_ecdsa_cosigner::derive_and_compute_corrected_R(elliptic_curve256_algebra_ctx_t* algebra, 

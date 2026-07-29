@@ -10,9 +10,11 @@
 #include "crypto/zero_knowledge_proof/schnorr.h"
 #include "crypto/GFp_curve_algebra/GFp_curve_algebra.h"
 #include "utils/string_utils.h"
+#include "utils.h"
 #include "bam_well_formed_proof.h"
 #include "crypto/algebra_utils/algebra_utils.h"
 #include "../crypto/paillier_commitment/paillier_commitment_internal.h"
+#include "cosigner/mpc_globals.h"
 
 #include <openssl/crypto.h>
 #include <openssl/bn.h>
@@ -338,7 +340,16 @@ void bam_ecdsa_cosigner_server::add_user_and_commit(const std::string& setup_id,
     validate_tenant_id_setup(setup_id);
 
 
-    decrypt_and_rebuild_private_share(server_id, algorithm, data, private_share, expected_public_key);
+    elliptic_curve256_algebra_ctx_t* algebra = get_algebra(algorithm);
+    decrypt_and_rebuild_private_share(server_id, algebra, _platform_service, data, /*destination_n=*/2, private_share, expected_public_key);
+
+    if (is_zero_scalar(private_share.data))
+    {
+        LOG_FATAL("Secret share reconstructed is zero for key %s, server_id %" PRIu64 ", client_id %" PRIu64, key_id.c_str(), server_id, client_id);
+        throw cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
+
+    check_a_valid_point(expected_public_key, algebra);
 
     commit_to_share(setup_id,
                     key_id,
@@ -349,6 +360,23 @@ void bam_ecdsa_cosigner_server::add_user_and_commit(const std::string& setup_id,
                     expected_public_key,
                     B);
 
+}
+
+void bam_ecdsa_cosigner_server::generate_add_user_share(const std::string& key_id,
+                                                        const std::string& new_key_id,
+                                                        const cosigner_sign_algorithm algorithm,
+                                                        const std::vector<uint64_t>& new_player_ids,
+                                                        const std::map<uint64_t, std::string>& new_player_id_to_modulus,
+                                                        const uint64_t my_player_id,
+                                                        const bool is_redistribute_request,
+                                                        add_user_data& data)
+{
+    bam_key_metadata_server key_metadata;
+    _key_persistency.load_key_metadata(key_id, key_metadata);
+
+    bam_ecdsa_cosigner::generate_add_user_share(key_metadata, key_id, new_key_id, algorithm,
+                                                new_player_ids, new_player_id_to_modulus, my_player_id,
+                                                is_redistribute_request, _key_persistency, data);
 }
 
 void bam_ecdsa_cosigner_server::generate_share_and_commit(const std::string& setup_id,
@@ -598,6 +626,12 @@ void bam_ecdsa_cosigner_server::generate_signature_share(const std::string& key_
 
     bam_key_metadata_server server_key_metadata;
 
+    size_t blocks = data.blocks.size();
+    if (blocks > MAX_BLOCKS_TO_SIGN)
+    {
+        LOG_ERROR("got too many blocks to sign %lu", blocks);
+        throw_cosigner_exception(cosigner_exception::INVALID_PARAMETERS);
+    }
     const auto signature_request_data = fill_bam_signing_info_from_metadata(metadata_json, static_cast<uint32_t>(data.blocks.size()));
     if (0 == signature_request_data.size())
     {

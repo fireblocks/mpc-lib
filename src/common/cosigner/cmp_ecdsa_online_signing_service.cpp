@@ -25,6 +25,9 @@ static inline const char* to_string(cosigner_sign_algorithm algorithm)
     case ECDSA_SECP256R1: return "ECDSA_SECP256R1";
     case EDDSA_ED25519: return "EDDSA_ED25519";
     case ECDSA_STARK: return "ECDSA_STARK";
+    case SCHNORR_SECP256K1: return "SCHNORR_SECP256K1";
+    case SCHNORR_SECP256R1: return "SCHNORR_SECP256R1";
+    case SCHNORR_STARK: return "SCHNORR_STARK";
     default:
         return "UNKNOWN";
     }

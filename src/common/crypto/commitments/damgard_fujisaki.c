@@ -266,7 +266,8 @@ ring_pedersen_status damgard_fujisaki_verify_commitment_internal(const damgard_f
     expected_commitment = BN_CTX_get(ctx);
     if (!expected_commitment)
     {
-        return RING_PEDERSEN_OUT_OF_MEMORY;
+        ret = RING_PEDERSEN_OUT_OF_MEMORY;
+        goto cleanup;
     }
     
     ret = damgard_fujisaki_create_commitment_with_private_internal(priv, x, batch_size, r, expected_commitment, ctx);

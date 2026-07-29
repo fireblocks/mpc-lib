@@ -87,6 +87,14 @@ public:
     void add_user_request(const std::string& key_id, cosigner_sign_algorithm algorithm, const std::string& new_key_id, const std::vector<uint64_t>& players_ids, uint8_t t, add_user_data& data);
     void add_user(const std::string& tenant_id, const std::string& key_id, cosigner_sign_algorithm algorithm, uint8_t t, const std::map<uint64_t, add_user_data>& data, uint64_t ttl, commitment& setup_commitment);
 
+    // Upgrades a Shamir (threshold) ECDSA_SECP256K1 key to a CMP key with the SAME public key:
+    // converts this player's threshold share to an additive one (lagrange coefficient over ALL existing
+    // players, who must all participate) and seeds the CMP setup for new_key_id with it. The remaining
+    // rounds are the standard setup rounds (store_setup_commitments -> ... -> create_secret), and an
+    // in-progress upgrade is cancelled like any other in-progress key creation.
+    void upgrade_key_to_cmp(const std::string& tenant_id, const std::string& key_id, cosigner_sign_algorithm algorithm, const std::string& new_key_id,
+        const std::vector<uint64_t>& players_ids, const std::vector<uint64_t>& new_players_ids, commitment& setup_commitment);
+
 private:
     // helpers
     void generate_setup_commitments(const std::string& key_id, const std::string& tenant_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_algebra_ctx_t* algebra, const std::vector<uint64_t>& players_ids, 

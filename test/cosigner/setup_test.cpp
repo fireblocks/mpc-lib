@@ -46,6 +46,13 @@ std::string setup_persistency::dump_key(const std::string& key_id) const
         return HexStr(it->second.private_key, &it->second.private_key[sizeof(elliptic_curve256_scalar_t)]);
     }
 
+void setup_persistency::preload_key(const std::string& key_id, cosigner_sign_algorithm algorithm, const elliptic_curve256_scalar_t& private_key,
+                                    const cmp_key_metadata& metadata)
+{
+    store_key(key_id, algorithm, private_key, 0);
+    store_key_metadata(key_id, metadata, false);
+}
+
 bool setup_persistency::key_exist(const std::string& key_id) const
 {
     std::shared_lock lock(_mutex);
@@ -172,6 +179,7 @@ private:
     void fill_signing_info_from_metadata(const std::string& metadata, std::vector<uint32_t>& flags) const override {assert(0);}
     void fill_eddsa_signing_info_from_metadata(std::vector<eddsa_signature_data>& info, const std::string& metadata) const override {assert(0);}
     void fill_bam_signing_info_from_metadata(std::vector<bam_signing_properties>& info, const std::string& metadata) const override {assert(0);}
+    void fill_frost_signing_info_from_metadata(std::vector<frost_signing_properties>& info, const std::string& metadata) const override {assert(0);}
     bool is_client_id(uint64_t player_id) const override {return false;}
     void mark_key_setup_in_progress(const std::string& key_id) const override {}
     void clear_key_setup_in_progress(const std::string& key_id) const override {}
@@ -233,8 +241,9 @@ void create_secret(players_setup_info& players,
         setup_zk_proofs& proof = proofs[i->first];
         REQUIRE_NOTHROW(i->second->setup_service.generate_setup_proofs(keyid, decommitments, proof));
 
-        // Multiple decommitments are fine
-        REQUIRE_NOTHROW(i->second->setup_service.generate_setup_proofs(keyid, decommitments, proof));
+        // Generating setup proofs twice must be rejected: reusing the committed Schnorr nonce under a fresh challenge would leak the secret share
+        setup_zk_proofs repeat_proof;
+        REQUIRE_THROWS_AS(i->second->setup_service.generate_setup_proofs(keyid, decommitments, repeat_proof), cosigner_exception);
     }
     decommitments.clear();
 
@@ -507,5 +516,140 @@ TEST_CASE("add_user") {
         new_players[11];
         new_players[12];
         add_user(players, new_players, ECDSA_STARK, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+    }
+}
+
+// ===========================================================================
+// upgrade_key_to_cmp (WLT-8692): a Shamir (threshold) 3-of-3 secp256k1 key is
+// converted into a CMP key for the SAME public key. Each player turns its
+// threshold share into an additive one (lagrange), seeds the CMP setup with
+// it, and the ordinary setup rounds complete the new key.
+// ===========================================================================
+#include "crypto/shamir_secret_sharing/verifiable_secret_sharing.h"
+
+// Split a fresh secret into a Shamir t-of-t (threshold) key and store each player's
+// share + metadata in its persistency, as production threshold keys are stored on device.
+static void create_shamir_key(players_setup_info& players, const std::string& keyid, elliptic_curve256_point_t& pubkey)
+{
+    std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> algebra(create_algebra(ECDSA_SECP256K1), elliptic_curve256_algebra_ctx_free);
+
+    std::vector<uint64_t> ids;
+    for (auto i = players.begin(); i != players.end(); ++i)
+        ids.push_back(i->first);
+    const uint8_t t = (uint8_t)ids.size();
+
+    elliptic_curve256_scalar_t secret;
+    REQUIRE(algebra->rand(algebra.get(), &secret) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+    REQUIRE(algebra->generator_mul(algebra.get(), &pubkey, &secret) == ELLIPTIC_CURVE_ALGEBRA_SUCCESS);
+
+    verifiable_secret_sharing_t* shamir = nullptr;
+    REQUIRE(verifiable_secret_sharing_split_with_custom_ids(algebra.get(), secret, sizeof(secret), t, t, ids.data(), &shamir) == VERIFIABLE_SECRET_SHARING_SUCCESS);
+    std::unique_ptr<verifiable_secret_sharing_t, void(*)(verifiable_secret_sharing_t*)> guard(shamir, verifiable_secret_sharing_free_shares);
+
+    cmp_key_metadata metadata;
+    metadata.t = t;
+    metadata.n = t;
+    metadata.flags = THRESHOLD;                 // Shamir/VSS (threshold-DKG) key, as on real devices
+    metadata.algorithm = ECDSA_SECP256K1;
+    metadata.ttl = 0;
+    memcpy(metadata.public_key, pubkey, sizeof(elliptic_curve256_point_t));
+    memset(metadata.seed, 0, sizeof(commitments_sha256_t));
+    for (uint64_t id : ids)
+        metadata.players_info[id];
+
+    for (uint8_t i = 0; i < t; ++i)
+    {
+        shamir_secret_share_t share;
+        REQUIRE(verifiable_secret_sharing_get_share(shamir, i, &share) == VERIFIABLE_SECRET_SHARING_SUCCESS);
+        elliptic_curve256_scalar_t share_scalar;
+        memcpy(share_scalar, share.data, sizeof(elliptic_curve256_scalar_t));
+        players[share.id].preload_key(keyid, ECDSA_SECP256K1, share_scalar, metadata);
+        OPENSSL_cleanse(share_scalar, sizeof(share_scalar));
+        OPENSSL_cleanse(share.data, sizeof(share.data));
+    }
+    OPENSSL_cleanse(secret, sizeof(secret));
+}
+
+// Drive the full upgrade: every old player runs upgrade_key_to_cmp, then the standard
+// CMP setup rounds run to completion; every player must end with the ORIGINAL pubkey.
+static void upgrade_to_cmp(players_setup_info& players, const std::string& old_keyid, const std::string& new_keyid,
+                           const elliptic_curve256_point_t& pubkey, uint32_t version)
+{
+    std::vector<uint64_t> ids;
+    std::vector<uint64_t> new_ids;
+    std::map<uint64_t, std::unique_ptr<setup_info>> services;
+    for (auto i = players.begin(); i != players.end(); ++i)
+    {
+        ids.push_back(i->first);
+        new_ids.push_back(i->first);
+        services.emplace(i->first, std::make_unique<setup_info>(i->first, i->second));
+    }
+
+    std::map<uint64_t, commitment> commitments;
+    for (auto i = services.begin(); i != services.end(); ++i)
+        REQUIRE_NOTHROW(i->second->setup_service.upgrade_key_to_cmp(TENANT_ID, old_keyid, ECDSA_SECP256K1, new_keyid, ids, new_ids, commitments[i->first]));
+
+    std::map<uint64_t, setup_decommitment> decommitments;
+    for (auto i = services.begin(); i != services.end(); ++i)
+        REQUIRE_NOTHROW(i->second->setup_service.store_setup_commitments(new_keyid, commitments, version, decommitments[i->first]));
+    commitments.clear();
+
+    std::map<uint64_t, setup_zk_proofs> proofs;
+    for (auto i = services.begin(); i != services.end(); ++i)
+        REQUIRE_NOTHROW(i->second->setup_service.generate_setup_proofs(new_keyid, decommitments, proofs[i->first]));
+    decommitments.clear();
+
+    std::map<uint64_t, std::map<uint64_t, byte_vector_t>> paillier_large_factor_proofs;
+    for (auto i = services.begin(); i != services.end(); ++i)
+        REQUIRE_NOTHROW(i->second->setup_service.verify_setup_proofs(new_keyid, proofs, paillier_large_factor_proofs[i->first]));
+    proofs.clear();
+
+    std::unique_ptr<elliptic_curve256_algebra_ctx_t, void(*)(elliptic_curve256_algebra_ctx_t*)> algebra(create_algebra(ECDSA_SECP256K1), elliptic_curve256_algebra_ctx_free);
+    const size_t PUBKEY_SIZE = algebra->point_size(algebra.get());
+    for (auto i = services.begin(); i != services.end(); ++i)
+    {
+        std::string public_key;
+        cosigner_sign_algorithm algorithm;
+        REQUIRE_NOTHROW(i->second->setup_service.create_secret(new_keyid, paillier_large_factor_proofs, public_key, algorithm));
+        REQUIRE(algorithm == ECDSA_SECP256K1);
+        REQUIRE(public_key.size() == PUBKEY_SIZE);
+        REQUIRE(memcmp(pubkey, public_key.data(), PUBKEY_SIZE) == 0); // same key, same address
+    }
+}
+
+TEST_CASE("upgrade_key_to_cmp") {
+    uuid_t uid;
+    char keyid[37] = {0}, new_keyid[37] = {0};
+    uuid_generate_random(uid); uuid_unparse(uid, keyid);
+    uuid_generate_random(uid); uuid_unparse(uid, new_keyid);
+
+    SECTION("3-of-3 Shamir key upgrades to CMP with same pubkey") {
+        elliptic_curve256_point_t pubkey;
+        players_setup_info players;
+        players[1]; players[2]; players[3];
+        create_shamir_key(players, keyid, pubkey);
+        upgrade_to_cmp(players, keyid, new_keyid, pubkey, fireblocks::common::cosigner::MPC_PROTOCOL_VERSION);
+    }
+
+    SECTION("validation") {
+        elliptic_curve256_point_t pubkey;
+        players_setup_info players;
+        players[1]; players[2]; players[3];
+        create_shamir_key(players, keyid, pubkey);
+
+        setup_info svc(1, players[1]);
+        commitment out;
+        // non-secp256k1 algorithm rejected
+        REQUIRE_THROWS_AS(svc.setup_service.upgrade_key_to_cmp(TENANT_ID, keyid, EDDSA_ED25519, new_keyid, {1, 2, 3}, {1, 2, 3}, out), cosigner_exception);
+        // wrong player count rejected
+        REQUIRE_THROWS_AS(svc.setup_service.upgrade_key_to_cmp(TENANT_ID, keyid, ECDSA_SECP256K1, new_keyid, {1, 2}, {1, 2}, out), cosigner_exception);
+        // missing old player rejected
+        REQUIRE_THROWS_AS(svc.setup_service.upgrade_key_to_cmp(TENANT_ID, keyid, ECDSA_SECP256K1, new_keyid, {1, 2, 4}, {1, 2, 3}, out), cosigner_exception);
+        // duplicate new players rejected
+        REQUIRE_THROWS_AS(svc.setup_service.upgrade_key_to_cmp(TENANT_ID, keyid, ECDSA_SECP256K1, new_keyid, {1, 2, 3}, {1, 1, 3}, out), cosigner_exception);
+        // new_key_id that already exists rejected
+        REQUIRE_THROWS_AS(svc.setup_service.upgrade_key_to_cmp(TENANT_ID, keyid, ECDSA_SECP256K1, keyid, {1, 2, 3}, {1, 2, 3}, out), cosigner_exception);
+        // unknown old key rejected
+        REQUIRE_THROWS_AS(svc.setup_service.upgrade_key_to_cmp(TENANT_ID, "no-such-key", ECDSA_SECP256K1, new_keyid, {1, 2, 3}, {1, 2, 3}, out), cosigner_exception);
     }
 }

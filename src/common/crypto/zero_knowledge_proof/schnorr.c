@@ -125,12 +125,21 @@ zero_knowledge_proof_status schnorr_zkp_generate_with_custom_randomness(const el
     if (!algebra || !prover_id || !id_len || !secret || !public_data || !randomness || !proof)
         return ZKP_INVALID_PARAMETER;
 
-    if (is_zero(*randomness))
+    elliptic_curve256_scalar_t reduced_randomness;
+    static const uint8_t zero = 0;
+    if (algebra->add_scalars(algebra, &reduced_randomness, *randomness, sizeof(elliptic_curve256_scalar_t), &zero, sizeof(uint8_t)) != ELLIPTIC_CURVE_ALGEBRA_SUCCESS)
         return ZKP_INVALID_PARAMETER;
+    if (is_zero(reduced_randomness))
+    {
+        ret = ZKP_INVALID_PARAMETER;
+        goto cleanup;
+    }
     
     ret = schnorr_zkp_generate_impl(algebra, prover_id, id_len, *secret, sizeof(elliptic_curve256_scalar_t), public_data, randomness, &local_proof);
     if (ret == ZKP_SUCCESS)
         memcpy(proof, &local_proof, sizeof(local_proof));
+cleanup:
+    OPENSSL_cleanse(reduced_randomness, sizeof(elliptic_curve256_scalar_t));
     return ret;
 }
 
